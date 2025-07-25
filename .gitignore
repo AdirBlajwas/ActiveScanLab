@@ -5,4 +5,5 @@ venv/
 nih_chest_xrays_light/
 archive_light/
 .DS_Store
-ARXIV_V5_CHESTXRAY.pdf
+ARXIV_V5_CHESTXRAY.pdfֿ
+__pycache__/

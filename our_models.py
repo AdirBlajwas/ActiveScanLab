@@ -48,7 +48,7 @@ class BaseResNetModel(nn.Module, ABC):
         raise NotImplementedError("Subclasses must implement get_classifier_parameters method")
 
 
-class ResNet50Model(BaseResNetModel):
+class Resnet50Model(BaseResNetModel):
     def _load_model(self):
         if self.pretrained:
             print("Loading pretrained ResNet50 model...")
@@ -64,7 +64,7 @@ class ResNet50Model(BaseResNetModel):
         return self.model.fc.parameters()
 
 
-class ResNet18Model(BaseResNetModel):
+class Resnet18Model(BaseResNetModel):
     def _load_model(self):
         if self.pretrained:
             print("Loading pretrained ResNet18 model...")
@@ -80,7 +80,7 @@ class ResNet18Model(BaseResNetModel):
         return self.model.fc.parameters()
 
 
-class DenseNet121Model(BaseResNetModel):
+class Densenet121Model(BaseResNetModel):
     def __init__(self, out_size=1, freeze=True, pretrained=True):
         self.out_size = out_size
         super(DenseNet121Model, self).__init__(freeze=freeze, pretrained=pretrained)
