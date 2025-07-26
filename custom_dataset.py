@@ -5,6 +5,21 @@ from torchvision import transforms
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+
+with open("nih_chest_xrays_light/train_val_list.txt", 'r') as f:
+    content = f.readlines()
+content = [x.strip().replace('.png', '.jpg') for x in content]
+with open("nih_chest_xrays_light/train_val_list.txt", 'w') as f:
+    f.write('\n'.join(content))
+
+with open("nih_chest_xrays_light/test_list.txt", 'r') as f:
+    content = f.readlines()
+
+content = [x.strip().replace('.png', '.jpg') for x in content]
+with open("nih_chest_xrays_light/test_list.txt", 'w') as f:
+    f.write('\n'.join(content))
+
+    
 class ChestXrayDatasetTrain(Dataset):
     def __init__(self, df, root_dir):
         self.df = df.reset_index(drop=True)

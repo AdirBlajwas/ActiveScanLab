@@ -1,4 +1,4 @@
-from costume_dataset import ChestXrayDataset
+from custom_dataset import ChestXrayDataset
 from classifier_models import Resnet18Model, Resnet50Model, Densenet121Model
 from torch.utils.data import DataLoader
 import torch
@@ -20,6 +20,7 @@ class ActiveLearningPipeline:
                  root_dir = None,
                  dataset=None,
                  batch_size=32,
+                 test_sample_size=None,
                  seed=42,
                  max_train_size=60000): #NOTR: update default values later as needed
 
@@ -42,7 +43,11 @@ class ActiveLearningPipeline:
         self.train_indices = set()
 
         self.test_indices = self.dataset.test_indices
+        if test_sample_size is not None:
+            self.test_indices = random.sample(self.test_indices, test_sample_size)
+
         self.test_loader = self.dataset.get_dataloader(from_split='test', indices=self.test_indices, batch_size=self.batch_size)
+
         
         self.device = device
         self.model_name = model_name
@@ -55,8 +60,8 @@ class ActiveLearningPipeline:
         # self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
         
     def run_pipeline(self):
-        accuracy_scores = []
-        recall_scores = []
+        self.accuracy_scores = []
+        self.recall_scores = []
         new_selected_indices = self._sampling()
 
         self._update_train_indices(new_selected_indices)
@@ -67,11 +72,16 @@ class ActiveLearningPipeline:
                 raise ValueError("The train set is larger than 600 samples")
 
             print(f"Iteration {iteration + 1}/{self.iterations}")
+            print("Train indices: ", len(self.train_indices))
+            print("Pool indices: ", len(self.pool_indices))
+            print("Test indices: ", len(self.test_indices))
 
+            print("Training model")
             trained_model = self._train_model()
+            print("Evaluating model")
             accuracy, recall = self._evaluate_model(trained_model)
-            accuracy_scores.append(accuracy)
-            recall_scores.append(recall)
+            self.accuracy_scores.append(accuracy)
+            self.recall_scores.append(recall)
 
             if len(self.pool_indices) < self.budget_per_iter:
                 print("Not enough samples in pool to continue.")
@@ -86,7 +96,7 @@ class ActiveLearningPipeline:
             print(f"Recall: {recall:.4f}")
             print("----------------------------------------")
 
-        return accuracy_scores, recall_scores
+        return self.accuracy_scores, self.recall_scores
 
     def create_classifier_model(self):
         if self.model_name == 'resnet18':
@@ -125,6 +135,7 @@ class ActiveLearningPipeline:
         return model
     
     def _evaluate_model(self, model):
+        model.to(self.device)
         model.eval()
         correct = 0
         total = 0
@@ -172,7 +183,9 @@ class ActiveLearningPipeline:
 class RandomSamplingActiveLearning(ActiveLearningPipeline):
     def _sampling(self, **kwargs):
         random.seed(self.seed)
-        return set(random.sample(self.pool_indices, self.budget_per_iter))
+        # Convert set to list for random.sample, then convert back to set
+        pool_list = list(self.pool_indices)
+        return set(random.sample(pool_list, self.budget_per_iter))
 
 
 class BADGESamplingActiveLearning(ActiveLearningPipeline):
@@ -261,6 +274,7 @@ if __name__ == "__main__":
         model_name='resnet18',
         objective_function_name='BCEWithLogitsLoss',
         optimizer_name='Adam',
+        test_sample_size=1000,
         seed=42,
         dataset=dataset
     )
