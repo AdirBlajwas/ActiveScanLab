@@ -361,7 +361,7 @@ else:
     # Use a smaller sample size for quick checking
     sample_size = min(100, len(image_files))
     print(f"Checking a sample of {sample_size} images...")
-
+        
     # Check which images exist locally
     for img_file in tqdm(image_files[:sample_size], desc="Checking images"):
         image_path = find_image(img_file)
