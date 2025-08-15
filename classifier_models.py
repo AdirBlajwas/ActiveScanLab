@@ -130,6 +130,17 @@ class BaseResnetModel(nn.Module, ABC):
 
     def get_classifier_parameters(self):
         raise NotImplementedError("Subclasses must implement get_classifier_parameters method")
+    
+    def get_classifier_module(self):
+        raise NotImplementedError("Subclasses must implement get_classifier_parameters method")
+    
+    @abstractmethod
+    def get_penultimate_layer_embeddings(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Extracts the output of the penultimate layer (before the final classifier).
+        Must be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement get_classifier_parameters method")
 
 
 class Resnet50Model(BaseResnetModel):
@@ -146,6 +157,26 @@ class Resnet50Model(BaseResnetModel):
 
     def get_classifier_parameters(self):
         return self.model.fc.parameters()
+    
+    def get_classifier_module(self):
+        return self.model.fc
+
+
+    def get_penultimate_layer_embeddings(self, x):
+        x = self.model.conv1(x)
+        x = self.model.bn1(x)
+        x = self.model.relu(x)
+        x = self.model.maxpool(x)
+
+        x = self.model.layer1(x)
+        x = self.model.layer2(x)
+        x = self.model.layer3(x)
+        x = self.model.layer4(x)
+
+        x = self.model.avgpool(x)
+        x = torch.flatten(x, 1)
+        return x
+
 
 
 class Resnet18Model(BaseResnetModel):
@@ -162,13 +193,32 @@ class Resnet18Model(BaseResnetModel):
 
     def get_classifier_parameters(self):
         return self.model.fc.parameters()
+    
+    def get_classifier_module(self):
+        return self.model.fc
+
+    
+    def get_penultimate_layer_embeddings(self, x):
+        x = self.model.conv1(x)
+        x = self.model.bn1(x)
+        x = self.model.relu(x)
+        x = self.model.maxpool(x)
+
+        x = self.model.layer1(x)
+        x = self.model.layer2(x)
+        x = self.model.layer3(x)
+        x = self.model.layer4(x)
+
+        x = self.model.avgpool(x)
+        x = torch.flatten(x, 1)
+        return x
+
 
 
 class Densenet121Model(BaseResnetModel):
     def __init__(self, out_size=1, optimizer='Adam', loss_function='BCEWithLogitsLoss', freeze=True, pretrained=True):
         self.out_size = out_size
         super().__init__(optimizer, loss_function, freeze, pretrained)
-        self.model = self._load_model()
 
     def _load_model(self):
         if self.pretrained:
@@ -184,3 +234,13 @@ class Densenet121Model(BaseResnetModel):
 
     def get_classifier_parameters(self):
         return self.model.classifier.parameters()
+    
+    def get_classifier_module(self):
+        return self.model.classifier
+
+    
+    def get_penultimate_layer_embeddings(self, x):
+        features = self.model.features(x)
+        out = F.relu(features, inplace=True)
+        out = F.adaptive_avg_pool2d(out, (1, 1)).view(x.size(0), -1)
+        return out  # shape [B, 1024]
