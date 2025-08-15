@@ -22,7 +22,7 @@ class ActiveLearningPipeline:
                  batch_size=32,
                  test_sample_size=None,
                  seed=42,
-                 max_train_size=60000): #NOTR: update default values later as needed
+                 max_train_size=60000): #NOTE: update default values later as needed
 
         if dataset is None and root_dir is None:
             raise ValueError("Either dataset or root_dir should be provided")
@@ -211,25 +211,28 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
         all_embeddings = []
         all_indices = []
 
-        with torch.no_grad():
-            for imgs, _, indices in pool_loader:
-                embeddings = model.gradient_embedding(imgs)
-                all_embeddings.append(embeddings)
-                all_indices.extend(indices.numpy())
+        for imgs, _, indices in pool_loader:
+            embeddings = model.gradient_embedding(imgs)
+            all_embeddings.append(embeddings)
+            all_indices.extend(indices)
 
         all_embeddings = np.concatenate(all_embeddings)
 
         # Perform k-means++ clustering
         kmeans = KMeans(n_clusters=self.budget_per_iter, init='k-means++').fit(all_embeddings)
         centers = kmeans.cluster_centers_
-        chosen = []
+        chosen = set()
 
         # Choose points closest to cluster centers
         for center in centers:
-            idx = np.argmin(np.linalg.norm(all_embeddings - center, axis=1))
-            chosen.append(all_indices[idx])
+            dists = np.linalg.norm(all_embeddings - center, axis=1)
+            sorted_indices = np.argsort(dists)
+            for idx in sorted_indices:
+                if all_indices[idx] not in chosen:
+                    chosen.add(all_indices[idx])
+                    break
 
-        return set(chosen)
+        return chosen
 
 
 

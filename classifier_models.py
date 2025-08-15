@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 import torch.nn.functional as F
 from torchvision import models
 from abc import ABC, abstractmethod
@@ -7,7 +8,7 @@ from tqdm import tqdm
 
 class BaseResnetModel(nn.Module, ABC):
     #NOTE: All models should return logits, not probabilities!!!
-    def __init__(self, optimizer: str = 'Adam', loss_function: str = 'BCEWithLogitsLoss', freeze=True, pretrained=True,):
+    def __init__(self, optimizer: str = 'Adam', loss_function: str = 'BCEWithLogitsLoss', freeze=True, pretrained=True):
         super(BaseResnetModel, self).__init__()
         self.pretrained = pretrained
         self.model = self._load_model()
@@ -95,17 +96,35 @@ class BaseResnetModel(nn.Module, ABC):
     def gradient_embedding(self, x):
         """
         Computes gradient embeddings for the BADGE sampling method.
+        Computes per-example gradient embeddings w.r.t. classifier weights.
+        Returns: numpy array of shape [batch_size, classifier_weight_dim]
         """
-        x = x.clone().detach().requires_grad_(True)
+        x = x.clone().detach()
+        x = x.to(next(self.model.parameters()).device)
+        x.requires_grad = False
+        
+        self.model.eval()  # Ensure model is in eval mode
+        self.model.zero_grad()
+        embeddings = []
+        
         logits = self.forward(x)
 
         pseudo_labels = (logits > 0).float()
-        loss = F.binary_cross_entropy_with_logits(logits, pseudo_labels, reduction='sum')
-        loss.backward()
+        loss_fn = torch.nn.BCEWithLogitsLoss(reduction='none')
+        losses = loss_fn(logits, pseudo_labels)
+        classifier = self.get_classifier_module()
 
-        embeddings = x.grad.view(x.size(0), -1).cpu().numpy()
+        for i in range(x.size(0)):
+            self.model.zero_grad()
+            losses[i].backward(retain_graph=True)
+            grad = classifier.weight.grad.detach().clone()  # shape: [1, hidden_dim]
+            if classifier.bias is not None and classifier.bias.grad is not None:
+                bias_grad = classifier.bias.grad.detach().clone().view(-1)
+                grad = torch.cat([grad, bias_grad], dim=0)
+            embeddings.append(grad.view(-1).cpu().numpy())
 
-        x.grad.zero_()
+        embeddings = np.stack(embeddings)  # shape: [B, D]
+        classifier.weight.grad.zero_()
 
         return embeddings
 

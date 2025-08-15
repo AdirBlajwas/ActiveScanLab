@@ -4,7 +4,7 @@ env*/
 venv/
 .vscode/
 nih_chest_xrays_light/
-archive_light/
+lab2fp/
 .DS_Store
 ARXIV_V5_CHESTXRAY.pdfֿ
 __pycache__/
