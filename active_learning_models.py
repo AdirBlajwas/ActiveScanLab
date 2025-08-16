@@ -40,7 +40,10 @@ class ActiveLearningPipeline:
         self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size)
         self.pool_indices = set(self.dataset.train_indices)
 
-        self.train_indices = set() # NOTE: should be initialized whith small set of indices uniformly sampled from the pool
+        # Initialize train_indices with a random 10% of the pool as the initial labeled set
+        total_pool = list(self.pool_indices)
+        initial_train_size = max(1, int(0.1 * len(total_pool)))
+        self.train_indices = set(random.sample(total_pool, initial_train_size))
 
         self.test_indices = self.dataset.test_indices
         if test_sample_size is not None:
