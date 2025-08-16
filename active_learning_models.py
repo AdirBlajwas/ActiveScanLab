@@ -40,7 +40,7 @@ class ActiveLearningPipeline:
         self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size)
         self.pool_indices = set(self.dataset.train_indices)
 
-        self.train_indices = set()
+        self.train_indices = set() # NOTE: should be initialized whith small set of indices uniformly sampled from the pool
 
         self.test_indices = self.dataset.test_indices
         if test_sample_size is not None:
@@ -53,6 +53,9 @@ class ActiveLearningPipeline:
         self.model_name = model_name
         self.objective_function_name = objective_function_name
         self.optimizer_name = optimizer_name
+        
+        print(f"Initializing active learning pipeline with {self.model_name} model")
+        print(f"{self.epochs_per_iter} epochs per iteration, {self.iterations} iterations and {self.budget_per_iter} budget per iteration.")
 
         
         # test_df = self.dataset[self.dataset['Image Index'].isin(self.test_indices)] 
@@ -66,10 +69,10 @@ class ActiveLearningPipeline:
 
         self._update_train_indices(new_selected_indices)
         self._update_pool_indices(new_selected_indices)
-
+        print(f"Running active learning pipeline whith {self.model_name} model")
         for iteration in range(self.iterations):
             if len(self.train_indices) > self.max_train_size:
-                raise ValueError("The train set is larger than 600 samples")
+                raise ValueError("The train set is larger than 60000 samples")
 
             print(f"Iteration {iteration + 1}/{self.iterations}")
             print("Train indices: ", len(self.train_indices))
@@ -311,9 +314,11 @@ def plot_results(activity_sample_1: ActiveLearningPipeline, activity_sample_2: A
         name2 = activity_sample_2.__class__.__name__
         plt.plot(activity_sample_2.accuracy_scores, label=f'{name2} Accuracy', color='red')
     plt.legend()
+    model_name = activity_sample_1.model_name
+    assert model_name == activity_sample_2.model_name if activity_sample_2 is not None else model_name, "Models should be the same for comparison in both samples"
     plt.xlabel('Iteration')
     plt.ylabel('Score (%)')
-    plt.title('Active Learning Results')
+    plt.title(f'Active Learning Results whith {model_name} model')
     plt.tight_layout()
     plt.savefig(f'{activity_sample_1.__class__.__name__}_{activity_sample_2.__class__.__name__ if activity_sample_2 is not None else ""}_results.png')
     plt.show()
