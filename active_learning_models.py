@@ -1,8 +1,10 @@
 from custom_dataset import ChestXrayDataset
 from classifier_models import Resnet18Model, Resnet50Model, Densenet121Model
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 import torch
 import random
+from typing import Optional
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
@@ -37,19 +39,20 @@ class ActiveLearningPipeline:
 
         self.root_dir = root_dir
         self.dataset = ChestXrayDataset(self.root_dir, split_type='from_files') if dataset is None else dataset
-        self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size)
+        self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size, shuffle=False)
         self.pool_indices = set(self.dataset.train_indices)
 
         # Initialize train_indices with a random 10% of the pool as the initial labeled set
         total_pool = list(self.pool_indices)
         initial_train_size = max(1, int(0.1 * len(total_pool)))
         self.train_indices = set(random.sample(total_pool, initial_train_size))
-
+        self._update_pool_indices(self.train_indices)
+        
         self.test_indices = self.dataset.test_indices
         if test_sample_size is not None:
             self.test_indices = random.sample(self.test_indices, test_sample_size)
 
-        self.test_loader = self.dataset.get_dataloader(from_split='test', indices=self.test_indices, batch_size=self.batch_size)
+        self.test_loader = self.dataset.get_dataloader(from_split='test', indices=list(self.test_indices), batch_size=self.batch_size)
 
         
         self.device = device
@@ -68,10 +71,6 @@ class ActiveLearningPipeline:
     def run_pipeline(self):
         self.accuracy_scores = []
         self.recall_scores = []
-        new_selected_indices = self._sampling()
-
-        self._update_train_indices(new_selected_indices)
-        self._update_pool_indices(new_selected_indices)
         print(f"Running active learning pipeline whith {self.model_name} model")
         for iteration in range(self.iterations):
             if len(self.train_indices) > self.max_train_size:
@@ -116,55 +115,12 @@ class ActiveLearningPipeline:
     
     def _train_model(self):
         classification_model_object = self.create_classifier_model()
-        model = classification_model_object.model
-        model.to(self.device)
-        # train_df = self.dataset[self.dataset['Image Index'].isin(self.train_indices)] 
-        # train_dataset = ChestXrayDataset(train_df, self.root_dir)
-        # train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-        train_loader = self.dataset.get_dataloader(from_split='train', indices=self.train_indices, batch_size=self.batch_size)
-        model.train()
-        for epoch in range(self.epochs_per_iter):
-            total_loss = 0
-            for images, labels, _ in tqdm(train_loader):
-                images = images.to(self.device)
-                labels = labels.float().unsqueeze(1).to(self.device)
-
-                classification_model_object.optimizer.zero_grad()
-                outputs = model(images)
-
-                loss = classification_model_object.loss_function(outputs, labels)
-                loss.backward()
-                classification_model_object.optimizer.step()
-
-                total_loss += loss.item()
-            print(f"Epoch {epoch + 1}, Loss: {total_loss / len(train_loader):.4f}")
-        return model
+        train_loader = self.dataset.get_dataloader(from_split='train', indices=list(self.train_indices), batch_size=self.batch_size)
+        classification_model_object.train_model(self.device, train_loader, epochs=self.epochs_per_iter)
+        return classification_model_object
     
     def _evaluate_model(self, model):
-        model.to(self.device)
-        model.eval()
-        correct = 0
-        total = 0
-        true_positives = 0
-        actual_positives = 0
-        with torch.no_grad():
-            for images, labels, _ in self.test_loader:
-                images = images.to(self.device)
-                labels = labels.to(self.device)
-                outputs = model(images)
-                preds = torch.sigmoid(outputs).squeeze() > 0.5
-                correct += (preds.int() == labels).sum().item()
-                total += labels.size(0)
-                true_positives += ((preds.int() == 1) & (labels == 1)).sum().item()
-                actual_positives += (labels == 1).sum().item()
-        
-        accuracy = correct / total * 100
-        recall = (true_positives / actual_positives * 100) if actual_positives > 0 else 0
-        
-        print(f"Accuracy: {accuracy:.2f}%")
-        print(f"Recall: {recall:.2f}%")
-        
-        return accuracy, recall
+        return model.evaluate(self.device, self.test_loader)
 
     def _sampling(self, **kwargs):
         raise NotImplementedError("Subclass should implement this method")
@@ -195,15 +151,13 @@ class RandomSamplingActiveLearning(ActiveLearningPipeline):
 
 
 class BADGESamplingActiveLearning(ActiveLearningPipeline):
+    def __init__(self, *args, badge_subsample: Optional[int] = None, badge_fp16: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.badge_subsample = badge_subsample   # <-- use the params you received
+        self.badge_fp16 = badge_fp16
+        
     def _sampling(self, **kwargs):
         """
-            This is non checked code that performs badge sampling, generated by ChatGPT.
-            changes needed to be done:
-            1. Varify returned samples are set of image indices
-            2. Ensure that the model has a method `gradient_embedding` that returns embeddings
-            3. Ensure that the model is in evaluation mode before inference
-            
-            
             BADGE = Batch Active learning by Diverse Gradient Embeddings
             May improve active learning where:
             You want both uncertainty (picking hard-to-classify points).
@@ -211,35 +165,177 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
             The key insight is:
             Instead of sampling based on just predictions or just diversity in feature space, sample based on the gradients you would get if you trained on the sample. 
         """
+        budget = self.budget_per_iter
+        print(f"[BADGE] Starting BADGE sampling with budget={budget}")
         model = kwargs['model']
+        print(f"[BADGE] Model type: {type(model).__name__}")
         model.eval()
+        n_pool = len(self.pool_indices)
+    
+        # --- Decide active pool (optionally subsample for efficiency)
+        full_pool = list(self.pool_indices)  # absolute indices
+        n_pool = len(full_pool)
         
-        pool_loader = self.dataset.get_dataloader(from_split='train', indices=self.pool_indices, batch_size=self.batch_size)
-        all_embeddings = []
-        all_indices = []
+        print(f"[BADGE] Full pool size: {n_pool}, badge_subsample={self.badge_subsample}")
+        if self.badge_subsample and self.badge_subsample < n_pool:
+            print(f"[BADGE] Subsampling pool from {n_pool} to {self.badge_subsample}")
+            seed = getattr(self, "random_seed", None)
+            if seed is not None:
+                random.seed(int(seed))
+            # sample FROM the existing pool indices
+            perm = random.sample(range(n_pool), self.badge_subsample)
+            active_pool = [full_pool[i] for i in perm]
+        else:
+            active_pool = full_pool
+            
+        pool_loader = self.dataset.get_dataloader(from_split='train', indices=active_pool, batch_size=self.batch_size)
+        
+        Z_list, P_list, ordered_pool = [], [], []
+        on_device = torch.device(self.device)
+        
+        print(f"[BADGE] Collecting features and probabilities...")
+        with torch.inference_mode():
+            for imgs, _, batch_indices in pool_loader:
+                imgs = imgs.to(on_device, non_blocking=True)
 
-        for imgs, _, indices in pool_loader:
-            embeddings = model.gradient_embedding(imgs)
-            all_embeddings.append(embeddings)
-            all_indices.extend(indices)
+                # Expect your model wrapper to support return_features=True
+                logits, features = model.forward(imgs, return_features=True)  # logits: (B,K or 1), features: (B,d)
+                z = features.flatten(1)
 
-        all_embeddings = np.concatenate(all_embeddings)
+                # Build probs matrix P: (B,K)
+                if logits.ndim == 2 and logits.size(1) == 1:
+                    # Binary head -> make 2-class distribution
+                    p1 = torch.sigmoid(logits)              # (B,1)
+                    p = torch.cat([1 - p1, p1], dim=1)      # (B,2)
+                else:
+                    p = F.softmax(logits, dim=1)            # (B,K)
 
-        # Perform k-means++ clustering
-        kmeans = KMeans(n_clusters=self.budget_per_iter, init='k-means++').fit(all_embeddings)
-        centers = kmeans.cluster_centers_
-        chosen = set()
+                # Accumulate on device (kmeans++ will run on-device)
+                Z_list.append(z)                            # (B,d)
+                P_list.append(p)                            # (B,K)
 
-        # Choose points closest to cluster centers
-        for center in centers:
-            dists = np.linalg.norm(all_embeddings - center, axis=1)
-            sorted_indices = np.argsort(dists)
-            for idx in sorted_indices:
-                if all_indices[idx] not in chosen:
-                    chosen.add(all_indices[idx])
-                    break
+                # Preserve exact pool index order (don’t assume DataLoader order == input order)
+                # batch_indices may be tensor; normalize to python ints
+                if isinstance(batch_indices, torch.Tensor):
+                    ordered_pool.extend(batch_indices.tolist())
+                else:
+                    ordered_pool.extend(list(batch_indices))
 
-        return chosen
+        if not Z_list:
+            return []
+
+        Z = torch.cat(Z_list, dim=0)                        # (N,d)
+        P = torch.cat(P_list, dim=0)                        # (N,K)
+        assert Z.size(0) == P.size(0) == len(ordered_pool), "Batching/order mismatch"
+
+        # Optionally reduce dtype
+        if self.badge_fp16:
+            Z = Z.half()
+            P = P.half()
+            
+        print(f"[BADGE] Collected features: Z.shape={Z.shape}, P.shape={P.shape}")
+        
+        # Compute BADGE gradient embeddings (N, K*d)
+        print(f"[BADGE] Computing BADGE gradient embeddings...")
+        G = self._badge_embeddings(Z, P, fp16=self.badge_fp16)  # (N,Kd)
+        print(f"[BADGE] Gradient embeddings computed: G.shape={G.shape}")
+        
+        # k-MEANS++ seeding on embeddings to pick `budget` points
+        k = min(int(budget), G.size(0))
+        if k <= 0:
+            return []
+        print(f"[BADGE] Running k-means++ seeding to select {k} points...")
+        chosen_local = self._kmeanspp(G, k=k)
+        print(f"[BADGE] k-means++ completed, selected {len(chosen_local)} local indices")
+
+        # Map back to pool indices
+        chosen_pool_indices = [ordered_pool[i] for i in chosen_local]
+        print(f"[BADGE] Mapped to pool indices, returning {len(chosen_pool_indices)} samples")
+        return chosen_pool_indices
+
+    # ------------------------------------------------------------------ BADGE embeddings
+    def _badge_embeddings(self, Z: torch.Tensor, P: torch.Tensor, yhat=None, fp16=False):
+        print(f"[BADGE] Computing BADGE embeddings: Z.shape={Z.shape}, P.shape={P.shape}")
+        # Z: (N,d), P: (N,K)
+        N, d = Z.shape
+        K = P.shape[1]
+        print(f"[BADGE] N={N}, d={d}, K={K}")
+        
+        if yhat is None:
+            yhat = torch.argmax(P, dim=1)  # (N,)
+            print(f"[BADGE] Computed yhat: shape={yhat.shape}, unique values={torch.unique(yhat).tolist()}")
+        else:
+            print(f"[BADGE] Using provided yhat: shape={yhat.shape}")
+            
+        device = Z.device
+        dtype = torch.float16 if fp16 else torch.float32
+        print(f"[BADGE] Using dtype: {dtype}")
+
+        # E = P[:,:,None] * Z[:,None,:]  -> (N,K,d)
+        print(f"[BADGE] Computing outer product P ⊗ Z...")
+        E = P.unsqueeze(-1) * Z.unsqueeze(1)   # (N,K,d)
+        print(f"[BADGE] Outer product computed: E.shape={E.shape}")
+        
+        # subtract Z in the block of the hallucinated class
+        print(f"[BADGE] Subtracting Z from hallucinated class blocks...")
+        rows = torch.arange(N, device=device)
+        E[rows, yhat, :] -= Z
+        print(f"[BADGE] Subtraction completed")
+        
+        G = E.reshape(N, K * d).to(dtype, copy=False)  # (N,Kd)
+        print(f"[BADGE] Reshaped to gradient embeddings: G.shape={G.shape}")
+
+        # (optional) L2-normalize for distance stability:
+        # G = torch.nn.functional.normalize(G, p=2, dim=1)
+        return G
+     # ------------------------------------------------------------------ k-MEANS++ seeding
+    def _kmeanspp(self, G: torch.Tensor, k: int):
+        """
+        G: (N,D) on GPU. Returns python list of indices (length k).
+        """
+        print(f"[BADGE] Starting k-means++ with G.shape={G.shape}, k={k}")
+        device = G.device
+        N = G.shape[0]
+        print(f"[BADGE] N={N}, device={device}")
+        
+        rng = torch.Generator(device=device)
+        seed = int(getattr(self, "random_seed", 0) or 0)
+        if seed:
+            rng.manual_seed(seed)
+            print(f"[BADGE] Set random seed: {seed}")
+
+        # pick first center uniformly
+        c0 = int(torch.randint(low=0, high=N, size=(1,), generator=rng, device=device).item())
+        centers = [c0]
+        print(f"[BADGE] First center: {c0}")
+
+        # squared distances to nearest center
+        # D = ||x||^2 + ||c||^2 - 2 x·c  (maintained as min over chosen centers)
+        print(f"[BADGE] Computing initial distances...")
+        x_norm2 = (G * G).sum(dim=1)  # (N,)
+        c = G[c0]
+        c_norm2 = (c * c).sum()
+        D = (x_norm2 + c_norm2 - 2.0 * (G @ c))  # (N,)
+        print(f"[BADGE] Initial distances computed: D.shape={D.shape}, min={D.min().item():.4f}, max={D.max().item():.4f}")
+
+        # iterate
+        for i in range(1, k):
+            # print(f"[BADGE] Iteration {i+1}/{k}: selecting center {i+1}")
+            probs = D.clamp_min_(1e-12) / (D.sum() + 1e-12)
+            # print(f"[BADGE] Probabilities computed: min={probs.min().item():.6f}, max={probs.max().item():.6f}")
+            
+            next_idx = int(torch.multinomial(probs, 1, generator=rng).item())
+            centers.append(next_idx)
+            # print(f"[BADGE] Selected center {i+1}: {next_idx}")
+
+            c = G[next_idx]
+            c_norm2 = (c * c).sum()
+            # update min distances
+            D = torch.minimum(D, x_norm2 + c_norm2 - 2.0 * (G @ c))
+            # print(f"[BADGE] Updated distances: min={D.min().item():.4f}, max={D.max().item():.4f}")
+
+        print(f"[BADGE] k-means++ completed. Selected centers: {centers}")
+        return centers
 
 class CoreSetSamplingActiveLearning(ActiveLearningPipeline):
     def _sampling(self, **kwargs):
@@ -253,7 +349,7 @@ class CoreSetSamplingActiveLearning(ActiveLearningPipeline):
         # 1. Extract embeddings for labeled set
         labeled_loader = self.dataset.get_dataloader(
             from_split="train",
-            indices=self.train_indices,
+            indices=list(self.train_indices),
             batch_size=self.batch_size
         )
 
@@ -267,7 +363,7 @@ class CoreSetSamplingActiveLearning(ActiveLearningPipeline):
         # 2. Extract embeddings for unlabeled pool
         pool_loader = self.dataset.get_dataloader(
             from_split="train",
-            indices=self.pool_indices,
+            indices=list(self.pool_indices),
             batch_size=self.batch_size
         )
 

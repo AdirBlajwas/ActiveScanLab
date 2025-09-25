@@ -21,8 +21,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from custom_dataset import ChestXrayDataset
 from classifier_models import Resnet18Model
-from active_learning_models import ActiveLearningPipeline
-from badge_sample import BADGESampler
+from active_learning_models import ActiveLearningPipeline, BADGESamplingActiveLearning
 
 
 class BADGESamplerPipeline(ActiveLearningPipeline):
@@ -151,9 +150,9 @@ def main():
     # Configuration
     dataset_path = "nih_chest_xrays_light"
     batch_size = 32
-    epochs_per_iter = 3
+    epochs_per_iter = 20
     iterations = 10
-    budget_per_iter = 100
+    budget_per_iter = 5000
     test_sample_size = 1000  # Using test sample size for debugging
     seed = 42
     
@@ -183,10 +182,8 @@ def main():
     
     # BADGE-specific parameters
     badge_params = {
-        'badge_subsample': None,  # Set to a number to subsample large pools
-        'badge_chunk_size': None,  # Set to control inference chunk size
-        'badge_use_memmap': False,  # Use memmap for large distance matrices
-        'badge_fp16': True,  # Use fp16 for memory efficiency
+        'badge_subsample': 50000,  # Set to a number to subsample large pools
+        'badge_fp16': False,  # Use fp16 for memory efficiency
     }
     
     print(f"[DEBUG] BADGE parameters: {badge_params}")
@@ -194,7 +191,7 @@ def main():
     # Initialize BADGE pipeline
     print(f"\n[DEBUG] Initializing BADGE Sampler Pipeline...")
     try:
-        badge_pipeline = BADGESamplerPipeline(
+        badge_pipeline = BADGESamplingActiveLearning(
             device=device,
             iterations=iterations,
             epochs_per_iter=epochs_per_iter,
@@ -220,6 +217,8 @@ def main():
     
     try:
         accuracy_scores, recall_scores = badge_pipeline.run_pipeline()
+        badge_pipeline.accuracy_scores = accuracy_scores
+        badge_pipeline.recall_scores   = recall_scores
         print(f"[DEBUG] Pipeline completed successfully!")
     except Exception as e:
         print(f"[DEBUG] ERROR in pipeline execution: {e}")
@@ -227,6 +226,9 @@ def main():
         return
     
     # Print final results
+    if not accuracy_scores or not recall_scores:
+        print("[DEBUG] No scores returned from pipeline.")
+        return
     print(f"\n[DEBUG] " + "=" * 60)
     print(f"[DEBUG] FINAL RESULTS:")
     print(f"[DEBUG] Final Accuracy: {accuracy_scores[-1]:.2f}%")

@@ -144,20 +144,17 @@ class ChestXrayDataset(Dataset):
         raise FileNotFoundError(f"{filename} not found.")
 
     
-    def get_dataloader(self, from_split='train', indices=None, sample_size=None, batch_size=32):
+    def get_dataloader(self, from_split='train', indices=None, sample_size=None, batch_size=32, shuffle=False):
         """
         """
         if from_split == 'train':
             df = self.train_df
-            shuffle = True
             if sample_size is not None:
                 df = df.sample(sample_size, random_state=42)
         elif from_split == 'test':
             df = self.test_df
-            shuffle = False
         else:
             df = self.df
-            shuffle = False
         if indices is not None:
             if not isinstance(indices, list):
                 indices = list(indices)

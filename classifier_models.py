@@ -12,6 +12,13 @@ class BaseResnetModel(nn.Module, ABC):
         super(BaseResnetModel, self).__init__()
         self.pretrained = pretrained
         self.model = self._load_model()
+        if freeze:
+            for param in self.model.parameters():
+                param.requires_grad = False
+
+            classifier_params = self.get_classifier_parameters()
+            for param in classifier_params:
+                param.requires_grad = True
 
         if optimizer == 'Adam':
             self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
@@ -26,14 +33,6 @@ class BaseResnetModel(nn.Module, ABC):
             self.loss_function = torch.nn.CrossEntropyLoss()
         else:
             raise ValueError(f"Invalid loss function: {loss_function}")
-
-        if freeze:
-            for param in self.model.parameters():
-                param.requires_grad = False
-
-            classifier_params = self.get_classifier_parameters()
-            for param in classifier_params:
-                param.requires_grad = True
         
     
     def train_model(self, device, dataloader, epochs=3):
@@ -73,60 +72,55 @@ class BaseResnetModel(nn.Module, ABC):
         self.model.eval()
         correct = 0
         total = 0
+        true_positives = 0
+        actual_positives = 0
         with torch.no_grad():
-            for images, labels, _ in dataloader:
+            for images, labels, _ in tqdm(dataloader):
                 images = images.to(device)
                 labels = labels.to(device)
                 outputs = self.model(images)
                 preds = torch.sigmoid(outputs).squeeze() > 0.5
                 correct += (preds.int() == labels).sum().item()
                 total += labels.size(0)
-        print(f"Accuracy: {correct / total * 100:.2f}%")
+                true_positives += ((preds.int() == 1) & (labels == 1)).sum().item()
+                actual_positives += (labels == 1).sum().item()
+        accuracy = correct / total * 100
+        recall = (true_positives / actual_positives * 100) if actual_positives > 0 else 0
+        print(f"Accuracy: {accuracy:.2f}%")
+        print(f"Recall: {recall:.2f}%")
 
+        return accuracy, recall
+    
+    def _apply_classifier(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Push penultimate features z through the final classifier head to get logits.
+        - Accepts z of shape (B, d) or (B, d, 1, 1) and flattens if needed.
+        - Returns raw logits: (B, K) for multiclass or (B, 1) for binary.
+        """
+        if z.dim() > 2:
+            z = torch.flatten(z, 1)  # (B, d)
+        head = self.get_classifier_module()  # subclass must return the final head (e.g., .fc or .classifier)
+        # DDP/DP-safe: (get_classifier_module should already unwrap; this is just extra safety)
+        if hasattr(head, "module"):
+            head = head.module
+        logits = head(z)  # (B, K) or (B, 1)
+        # Ensure 2D shape (rare models can return (B,))
+        if logits.dim() == 1:
+            logits = logits.unsqueeze(1)
 
-                
+        return logits
+
     @abstractmethod
     def _load_model(self):
         """Return the backbone with the final FC replaced."""
         pass
     
-    def forward(self, x):
-        return self.model(x)
-
-    def gradient_embedding(self, x):
-        """
-        Computes gradient embeddings for the BADGE sampling method.
-        Computes per-example gradient embeddings w.r.t. classifier weights.
-        Returns: numpy array of shape [batch_size, classifier_weight_dim]
-        """
-        x = x.clone().detach()
-        x = x.to(next(self.model.parameters()).device)
-        x.requires_grad = False
-        
-        self.model.eval()  # Ensure model is in eval mode
-        self.model.zero_grad()
-        embeddings = []
-        
-        logits = self.forward(x)
-
-        pseudo_labels = (logits > 0).float()
-        loss_fn = torch.nn.BCEWithLogitsLoss(reduction='none')
-        losses = loss_fn(logits, pseudo_labels)
-        classifier = self.get_classifier_module()
-
-        for i in range(x.size(0)):
-            self.model.zero_grad()
-            losses[i].backward(retain_graph=True)
-            grad = classifier.weight.grad.detach().clone()  # shape: [1, hidden_dim]
-            if classifier.bias is not None and classifier.bias.grad is not None:
-                bias_grad = classifier.bias.grad.detach().clone().view(-1)
-                grad = torch.cat([grad, bias_grad], dim=0)
-            embeddings.append(grad.view(-1).cpu().numpy())
-
-        embeddings = np.stack(embeddings)  # shape: [B, D]
-        classifier.weight.grad.zero_()
-
-        return embeddings
+    def forward(self, x, return_features: bool=False, only_features: bool=False):
+        z = self.get_penultimate_layer_embeddings(x)  # (B, d)
+        if only_features:
+            return z
+        logits = self._apply_classifier(z)            # (B, K) or (B, 1)
+        return (logits, z) if return_features else logits
 
     def get_classifier_parameters(self):
         raise NotImplementedError("Subclasses must implement get_classifier_parameters method")
