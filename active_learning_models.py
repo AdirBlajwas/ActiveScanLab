@@ -19,6 +19,7 @@ class ActiveLearningPipeline:
                  model_name: str,
                  objective_function_name: str = 'BCEWithLogitsLoss',
                  optimizer_name: str = 'Adam',
+                 lr = 1e-2,
                  root_dir = None,
                  dataset=None,
                  batch_size=32,
@@ -59,6 +60,7 @@ class ActiveLearningPipeline:
         self.model_name = model_name
         self.objective_function_name = objective_function_name
         self.optimizer_name = optimizer_name
+        self.lr = lr
         
         print(f"Initializing active learning pipeline with {self.model_name} model")
         print(f"{self.epochs_per_iter} epochs per iteration, {self.iterations} iterations and {self.budget_per_iter} budget per iteration.")
@@ -105,11 +107,11 @@ class ActiveLearningPipeline:
 
     def create_classifier_model(self):
         if self.model_name == 'resnet18':
-            return Resnet18Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name)
+            return Resnet18Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name, lr=self.lr)
         elif self.model_name == 'resnet50':
-            return Resnet50Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name)
+            return Resnet50Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name, lr=self.lr)
         elif self.model_name == 'densenet121':
-            return Densenet121Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name)
+            return Densenet121Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name, lr=self.lr)
         else:
             raise ValueError(f"Model {self.model_name} not found")
     
@@ -334,7 +336,7 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
             D = torch.minimum(D, x_norm2 + c_norm2 - 2.0 * (G @ c))
             # print(f"[BADGE] Updated distances: min={D.min().item():.4f}, max={D.max().item():.4f}")
 
-        print(f"[BADGE] k-means++ completed. Selected centers: {centers}")
+        print(f"[BADGE] k-means++ completed.")
         return centers
 
 class CoreSetSamplingActiveLearning(ActiveLearningPipeline):

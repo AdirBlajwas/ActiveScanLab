@@ -136,8 +136,8 @@ def plot_results(pipeline):
     plt.grid(True)
     
     plt.tight_layout()
-    plt.savefig('badge_sampler_results.png', dpi=300, bbox_inches='tight')
-    print(f"[DEBUG] Plot saved to 'badge_sampler_results.png'")
+    plt.savefig('plots/badge_sampler_results.png', dpi=300, bbox_inches='tight')
+    print(f"[DEBUG] Plot saved to 'plots'")
     plt.show()
 
 
@@ -150,7 +150,7 @@ def main():
     # Configuration
     dataset_path = "nih_chest_xrays_light"
     batch_size = 32
-    epochs_per_iter = 20
+    epochs_per_iter = 80
     iterations = 10
     budget_per_iter = 5000
     test_sample_size = 1000  # Using test sample size for debugging
@@ -185,7 +185,7 @@ def main():
         'badge_subsample': 50000,  # Set to a number to subsample large pools
         'badge_fp16': False,  # Use fp16 for memory efficiency
     }
-    
+    model_name = 'resnet18'
     print(f"[DEBUG] BADGE parameters: {badge_params}")
     
     # Initialize BADGE pipeline
@@ -196,7 +196,7 @@ def main():
             iterations=iterations,
             epochs_per_iter=epochs_per_iter,
             budget_per_iter=budget_per_iter,
-            model_name='resnet18',
+            model_name=model_name,
             objective_function_name='BCEWithLogitsLoss',
             optimizer_name='Adam',
             root_dir=dataset_path,
@@ -254,12 +254,19 @@ def main():
             'budget_per_iter': budget_per_iter,
             'epochs_per_iter': epochs_per_iter,
             'batch_size': batch_size,
-            'badge_params': badge_params
-        }
+            'badge_params': badge_params,
+            'model_name': model_name
+            }
         
         import json
+        with open('badge_sampler_results.jso', "r") as f:
+            try:
+              data = json.load(f)
+            except json.JSONDecodeError:
+              data = []
+        data.append(results)
         with open('badge_sampler_results.json', 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(results, f, indent=4)
         
         print(f"[DEBUG] Results saved to 'badge_sampler_results.json'")
         print(f"[DEBUG] Plot saved to 'badge_sampler_results.png'")

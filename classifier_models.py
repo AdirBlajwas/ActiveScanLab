@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 class BaseResnetModel(nn.Module, ABC):
     #NOTE: All models should return logits, not probabilities!!!
-    def __init__(self, optimizer: str = 'Adam', loss_function: str = 'BCEWithLogitsLoss', freeze=True, pretrained=True):
+    def __init__(self, optimizer: str = 'Adam', loss_function: str = 'BCEWithLogitsLoss',lr = 1e-2, freeze=True, pretrained=True):
         super(BaseResnetModel, self).__init__()
         self.pretrained = pretrained
         self.model = self._load_model()
@@ -21,9 +21,9 @@ class BaseResnetModel(nn.Module, ABC):
                 param.requires_grad = True
 
         if optimizer == 'Adam':
-            self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+            self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         elif optimizer == 'SGD':
-            self.optimizer = torch.optim.SGD(self.parameters(), lr=1e-3)
+            self.optimizer = torch.optim.SGD(self.parameters(), lr=lr)
         else:
             raise ValueError(f"Invalid optimizer: {optimizer}")
 
