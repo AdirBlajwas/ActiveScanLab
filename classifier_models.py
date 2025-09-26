@@ -97,7 +97,7 @@ class BaseResnetModel(nn.Module, ABC):
         Reinitialize the last linear layer to random weights.
         Works for both .fc (ResNet) and .classifier (DenseNet).
         """
-        print("[CLASSIFIER] Reinitializing the final classifier head...")
+        print("[CLASSIFIER] Reinitialized the final classifier head.")
         num_classes = 1 if num_classes is None else num_classes
 
         head = self.get_classifier_module()
@@ -207,7 +207,7 @@ class Resnet18Model(BaseResnetModel):
     def _load_model(self):
         if self.pretrained:
             print("Loading pretrained ResNet18 model...")
-            resnet18_model = models.resnet18(weights='DEFAULT')
+            resnet18_model = models.resnet18(weights=ResNet18_Weights.DEFAULT)
         else:
             print("Loading ResNet18 model without pretrained weights...")
             resnet18_model = models.resnet18(weights=None)

@@ -110,9 +110,9 @@ class ActiveLearningPipeline:
             print("Test indices: ", len(self.test_indices))
 
             print("Training model")
-            trained_model = self._train_model()
+            self._train_model()
             print("Evaluating model")
-            accuracy, recall = self._evaluate_model(trained_model)
+            accuracy, recall = self._evaluate_model()
             self.accuracy_scores.append(accuracy)
             self.recall_scores.append(recall)
 
@@ -120,7 +120,7 @@ class ActiveLearningPipeline:
                 print("Not enough samples in pool to continue.")
                 break
             print("Sampling new indices")
-            new_selected_indices = self._sampling(model=trained_model)
+            new_selected_indices = self._sampling()
 
             self._update_train_indices(new_selected_indices)
             self._update_pool_indices(new_selected_indices)
@@ -146,10 +146,10 @@ class ActiveLearningPipeline:
         self.model.reset_classifier_head()
         train_loader = self.dataset.get_dataloader(from_split='train', indices=list(self.train_indices), batch_size=self.batch_size)
         self.model.train_model(self.device, train_loader, epochs=self.epochs_per_iter)
-        return self.model
+        
 
-    def _evaluate_model(self, model):
-        return model.evaluate(self.device, self.test_loader)
+    def _evaluate_model(self):
+        return self.model.evaluate(self.device, self.test_loader)
 
     def _sampling(self, **kwargs):
         raise NotImplementedError("Subclass should implement this method")
@@ -196,7 +196,7 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
         """
         budget = self.budget_per_iter
         print(f"[BADGE] Starting BADGE sampling with budget={budget}")
-        model = kwargs['model']
+        model = self.model
         print(f"[BADGE] Model type: {type(model).__name__}")
         model.eval()
         n_pool = len(self.pool_indices)
