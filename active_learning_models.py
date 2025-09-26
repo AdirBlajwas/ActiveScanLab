@@ -9,7 +9,8 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 import numpy as np
-
+import os
+import pickle
 class ActiveLearningPipeline:
     def __init__(self, 
                  device,
@@ -25,29 +26,33 @@ class ActiveLearningPipeline:
                  batch_size=32,
                  test_sample_size=None,
                  seed=42,
-                 max_train_size=60000): #NOTE: update default values later as needed
+                 max_train_size=60000,
+                 resume_iter: int = None): #NOTE: update default values later as needed
 
         if dataset is None and root_dir is None:
             raise ValueError("Either dataset or root_dir should be provided")
-        
         self.seed = seed
+        random.seed(self.seed)
         self.iterations = iterations
         self.budget_per_iter = budget_per_iter
         self.batch_size = batch_size
         self.max_train_size = max_train_size
         self.epochs_per_iter = epochs_per_iter
-
-
         self.root_dir = root_dir
         self.dataset = ChestXrayDataset(self.root_dir, split_type='from_files') if dataset is None else dataset
         self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size, shuffle=False)
-        self.pool_indices = set(self.dataset.train_indices)
-
-        # Initialize train_indices with a random 10% of the pool as the initial labeled set
-        total_pool = list(self.pool_indices)
-        initial_train_size = max(1, int(0.1 * len(total_pool)))
-        self.train_indices = set(random.sample(total_pool, initial_train_size))
-        self._update_pool_indices(self.train_indices)
+        if not resume_iter:
+            self.pool_indices = set(self.dataset.train_indices)
+            # Initialize train_indices with a random 10% of the pool as the initial labeled set
+            total_pool = list(self.pool_indices)
+            initial_train_size = max(1, int(0.1 * len(total_pool)))
+            self.train_indices = set(random.sample(total_pool, initial_train_size))
+            self._update_pool_indices(self.train_indices)
+            self.start_iteration = 0
+        else:
+            print(f"Resuming from iteration {resume_iter}, loading previous train and pool indices from files")
+            self.train_indices, self.pool_indices = self._load_checkpoint(resume_iter)
+            self.start_iteration = resume_iter + 1
         
         self.test_indices = self.dataset.test_indices
         if test_sample_size is not None:
@@ -61,6 +66,7 @@ class ActiveLearningPipeline:
         self.objective_function_name = objective_function_name
         self.optimizer_name = optimizer_name
         self.lr = lr
+        self.model = self._create_classifier_model()
         
         print(f"Initializing active learning pipeline with {self.model_name} model")
         print(f"{self.epochs_per_iter} epochs per iteration, {self.iterations} iterations and {self.budget_per_iter} budget per iteration.")
@@ -69,12 +75,32 @@ class ActiveLearningPipeline:
         # test_df = self.dataset[self.dataset['Image Index'].isin(self.test_indices)] 
         # test_dataset = ChestXrayDataset(test_df, self.root_dir)
         # self.test_loader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True)
-        
+    def _save_checkpoint(self, iteration):
+        """Save train and pool indices at the end of each iteration."""
+        os.makedirs("checkpoints", exist_ok=True)
+        checkpoint_path = f"checkpoints/iteration_{iteration}.pkl"
+        with open(checkpoint_path, "wb") as f:
+            pickle.dump({
+                "train_indices": self.train_indices,
+                "pool_indices": self.pool_indices
+            }, f)
+        print(f"Saved checkpoint for iteration {iteration} to {checkpoint_path}")
+
+    def _load_checkpoint(self, iteration):
+        """Load train and pool indices from the latest checkpoint."""
+        checkpoint_path = f"checkpoints/iteration_{iteration}.pkl"
+        if os.path.exists(checkpoint_path):
+            with open(checkpoint_path, "rb") as f:
+                data = pickle.load(f)
+            print(f"Loaded checkpoint from iteration {iteration}")
+            return data["train_indices"], data["pool_indices"]
+        return None, None
+      
     def run_pipeline(self):
         self.accuracy_scores = []
         self.recall_scores = []
         print(f"Running active learning pipeline whith {self.model_name} model")
-        for iteration in range(self.iterations):
+        for iteration in range(self.start_iteration, self.iterations):
             if len(self.train_indices) > self.max_train_size:
                 raise ValueError("The train set is larger than 60000 samples")
 
@@ -98,6 +124,7 @@ class ActiveLearningPipeline:
 
             self._update_train_indices(new_selected_indices)
             self._update_pool_indices(new_selected_indices)
+            self._save_checkpoint(iteration)
 
             print(f"Accuracy: {accuracy:.4f}")
             print(f"Recall: {recall:.4f}")
@@ -105,7 +132,7 @@ class ActiveLearningPipeline:
 
         return self.accuracy_scores, self.recall_scores
 
-    def create_classifier_model(self):
+    def _create_classifier_model(self):
         if self.model_name == 'resnet18':
             return Resnet18Model(optimizer=self.optimizer_name, loss_function=self.objective_function_name, lr=self.lr)
         elif self.model_name == 'resnet50':
@@ -116,11 +143,11 @@ class ActiveLearningPipeline:
             raise ValueError(f"Model {self.model_name} not found")
     
     def _train_model(self):
-        classification_model_object = self.create_classifier_model()
+        self.model.reset_classifier_head()
         train_loader = self.dataset.get_dataloader(from_split='train', indices=list(self.train_indices), batch_size=self.batch_size)
-        classification_model_object.train_model(self.device, train_loader, epochs=self.epochs_per_iter)
-        return classification_model_object
-    
+        self.model.train_model(self.device, train_loader, epochs=self.epochs_per_iter)
+        return self.model
+
     def _evaluate_model(self, model):
         return model.evaluate(self.device, self.test_loader)
 

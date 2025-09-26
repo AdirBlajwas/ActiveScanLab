@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torchvision import models
 from abc import ABC, abstractmethod
 from tqdm import tqdm
+from torchvision.models import ResNet50_Weights, ResNet18_Weights, DenseNet121_Weights
 
 class BaseResnetModel(nn.Module, ABC):
     #NOTE: All models should return logits, not probabilities!!!
@@ -91,6 +92,30 @@ class BaseResnetModel(nn.Module, ABC):
 
         return accuracy, recall
     
+    def reset_classifier_head(self, num_classes: int = None):
+        """
+        Reinitialize the last linear layer to random weights.
+        Works for both .fc (ResNet) and .classifier (DenseNet).
+        """
+        print("[CLASSIFIER] Reinitializing the final classifier head...")
+        num_classes = 1 if num_classes is None else num_classes
+
+        head = self.get_classifier_module()
+        if hasattr(head, "in_features"):
+            in_f = head.in_features
+        else:
+            raise ValueError("Classifier head does not expose in_features")
+
+        new_head = nn.Linear(in_f, num_classes)
+        # Kaiming init (fan_out for classifier is fine; defaults work too)
+        nn.init.kaiming_normal_(new_head.weight, nonlinearity="linear")
+        if new_head.bias is not None:
+            nn.init.zeros_(new_head.bias)
+
+        self.update_classifier(new_head)
+        return new_head
+        
+    
     def _apply_classifier(self, z: torch.Tensor) -> torch.Tensor:
         """
         Push penultimate features z through the final classifier head to get logits.
@@ -128,6 +153,9 @@ class BaseResnetModel(nn.Module, ABC):
     def get_classifier_module(self):
         raise NotImplementedError("Subclasses must implement get_classifier_parameters method")
     
+    def update_classifier(self, new_features):
+        raise NotImplementedError("Subclasses must implement update_classifier method")
+    
     @abstractmethod
     def get_penultimate_layer_embeddings(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -141,7 +169,7 @@ class Resnet50Model(BaseResnetModel):
     def _load_model(self):
         if self.pretrained:
             print("Loading pretrained ResNet50 model...")
-            resnet50_model = models.resnet50(weights='DEFAULT')
+            resnet50_model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
         else:
             print("Loading ResNet50 model without pretrained weights...")
             resnet50_model = models.resnet50(weights=None)
@@ -154,7 +182,9 @@ class Resnet50Model(BaseResnetModel):
     
     def get_classifier_module(self):
         return self.model.fc
-
+    
+    def update_classifier(self, new_head: nn.Module):
+        self.model.fc = new_head
 
     def get_penultimate_layer_embeddings(self, x):
         x = self.model.conv1(x)
@@ -190,7 +220,9 @@ class Resnet18Model(BaseResnetModel):
     
     def get_classifier_module(self):
         return self.model.fc
-
+    
+    def update_classifier(self, new_head: nn.Module):
+        self.model.fc = new_head
     
     def get_penultimate_layer_embeddings(self, x):
         x = self.model.conv1(x)
@@ -210,14 +242,14 @@ class Resnet18Model(BaseResnetModel):
 
 
 class Densenet121Model(BaseResnetModel):
-    def __init__(self, out_size=1, optimizer='Adam', loss_function='BCEWithLogitsLoss', freeze=True, pretrained=True):
+    def __init__(self, out_size=1, optimizer='Adam', loss_function='BCEWithLogitsLoss',lr=1e-2, freeze=True, pretrained=True):
         self.out_size = out_size
-        super().__init__(optimizer, loss_function, freeze, pretrained)
+        super().__init__(optimizer, loss_function, lr, freeze, pretrained)
 
     def _load_model(self):
         if self.pretrained:
             print("Loading pretrained DenseNet121 model...")
-            densenet121_model = models.densenet121(weights='DEFAULT')
+            densenet121_model = models.densenet121(weights=DenseNet121_Weights.DEFAULT)
         else:
             print("Loading DenseNet121 model without pretrained weights...")
             densenet121_model = models.densenet121(weights=None)
@@ -231,7 +263,9 @@ class Densenet121Model(BaseResnetModel):
     
     def get_classifier_module(self):
         return self.model.classifier
-
+    
+    def update_classifier(self, new_head: nn.Module):
+        self.model.classifier = new_head
     
     def get_penultimate_layer_embeddings(self, x):
         features = self.model.features(x)

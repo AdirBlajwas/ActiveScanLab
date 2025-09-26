@@ -118,7 +118,7 @@ class ChestXrayDataset(Dataset):
             self.test_df = self.df.loc[list(test_files)]
             self.test_indices = self.test_df.index.tolist()
         else:
-            train_df, test_df = train_test_split(self.df, test_size=0.2, stratify=self.df['label'])
+            train_df, test_df = train_test_split(self.df, test_size=0.2, random_state=42, stratify=self.df['label'])
             self.train_df = train_df
             self.test_df = test_df
             self.train_indices = train_df.index.tolist()
