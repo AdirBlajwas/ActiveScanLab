@@ -33,6 +33,9 @@ class ActiveLearningPipeline:
             raise ValueError("Either dataset or root_dir should be provided")
         self.seed = seed
         random.seed(self.seed)
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
         self.iterations = iterations
         self.budget_per_iter = budget_per_iter
         self.batch_size = batch_size
@@ -56,7 +59,8 @@ class ActiveLearningPipeline:
         
         self.test_indices = self.dataset.test_indices
         if test_sample_size is not None:
-            self.test_indices = random.sample(self.test_indices, test_sample_size)
+            n = min(test_sample_size, len(self.test_indices))
+            self.test_indices = random.sample(self.test_indices, n)
 
         self.test_loader = self.dataset.get_dataloader(from_split='test', indices=list(self.test_indices), batch_size=self.batch_size)
 
@@ -182,9 +186,10 @@ class RandomSamplingActiveLearning(ActiveLearningPipeline):
 class BADGESamplingActiveLearning(ActiveLearningPipeline):
     def __init__(self, *args, badge_subsample: Optional[int] = None, badge_fp16: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.badge_subsample = badge_subsample   # <-- use the params you received
+        self.badge_subsample = badge_subsample
         self.badge_fp16 = badge_fp16
         
+    @torch.inference_mode() 
     def _sampling(self, **kwargs):
         """
             BADGE = Batch Active learning by Diverse Gradient Embeddings
@@ -280,7 +285,7 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
         # Map back to pool indices
         chosen_pool_indices = [ordered_pool[i] for i in chosen_local]
         print(f"[BADGE] Mapped to pool indices, returning {len(chosen_pool_indices)} samples")
-        return chosen_pool_indices
+        return set(chosen_pool_indices)
 
     # ------------------------------------------------------------------ BADGE embeddings
     def _badge_embeddings(self, Z: torch.Tensor, P: torch.Tensor, yhat=None, fp16=False):
@@ -367,71 +372,133 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
         return centers
 
 class CoreSetSamplingActiveLearning(ActiveLearningPipeline):
+    def __init__(self, *args, coreset_subsample: Optional[int] = None, l2_norm: bool = True, dist_chunk: int = 2048, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.coreset_subsample = coreset_subsample  
+        self.l2_norm = l2_norm
+        self.dist_chunk = dist_chunk
+        
+    @torch.inference_mode() 
     def _sampling(self, **kwargs):
         """
         Core-set (k-center greedy) active learning:
         Selects diverse points by maximizing the minimum distance to the current labeled set in embedding space.
         """
-        model = kwargs["model"]
+        budget = self.budget_per_iter
+        print(f"[CORE SET] Starting CORE SET sampling with budget={budget}")
+        model = self.model
+        print(f"[CORE SET] Model type: {type(model).__name__}")
         model.eval()
-
-        # 1. Extract embeddings for labeled set
+        n_pool = len(self.pool_indices)
+    
+        # --- Decide active pool (optionally subsample for efficiency)
+        full_pool = list(self.pool_indices)  # absolute indices
+        n_pool = len(full_pool)
+        
+        print(f"[CORE SET] Full pool size: {n_pool}, coreset_subsample={self.coreset_subsample}")
+        if self.coreset_subsample and self.coreset_subsample < n_pool:
+            print(f"[CORE SET] Subsampling pool from {n_pool} to {self.coreset_subsample}")
+            seed = getattr(self, "random_seed", None)
+            if seed is not None:
+                random.seed(int(seed))
+            # sample FROM the existing pool indices
+            perm = random.sample(range(n_pool), self.coreset_subsample)
+            active_pool = [full_pool[i] for i in perm]
+        else:
+            active_pool = full_pool
+            
+        pool_loader = self.dataset.get_dataloader(from_split='train', indices=active_pool, batch_size=self.batch_size)
+        on_device = torch.device(self.device)
+        
         labeled_loader = self.dataset.get_dataloader(
             from_split="train",
             indices=list(self.train_indices),
             batch_size=self.batch_size
         )
+        print(f"[CORE SET] Extracting features for labeled and pool sets...")
+        Z_L, _ = self._extract_features(labeled_loader, on_device)
+        Z_U, ordered_pool = self._extract_features(pool_loader, on_device)
+        print(f"[CORE SET] Extracted features: labeled {Z_L.shape}, pool {Z_U.shape}")
+        
+        # (optional) normalize features for stable Euclidean geometry
+        if self.l2_norm:
+            print(f"[CORE SET] L2-normalizing features...")
+            Z_L = F.normalize(Z_L, p=2, dim=1) if Z_L.numel() else Z_L
+            Z_U = F.normalize(Z_U, p=2, dim=1)
+            
+        k = int(self.budget_per_iter)
+        print(f"[CORE SET] Running greedy k-center with k={k}...")
+        if Z_L.size(0) > 0:
+            min_dists = self._min_dist_to_set(Z_U, Z_L, device=on_device, chunk=self.dist_chunk)  # (N,)
+        else:
+            # if you ever start with no labeled set
+            j0 = torch.randint(0, Z_U.size(0), (1,), device=on_device).item()
+            c0 = Z_U[j0:j0+1]
+            min_dists = self._pairwise_dist_to_point(Z_U, c0)
+         # --- greedy k-center
+        k = min(int(self.budget_per_iter), Z_U.size(0))
+        selected_local = []
+        for _ in range(k):
+            j = int(torch.argmax(min_dists).item())     # farthest point
+            selected_local.append(j)
 
-        labeled_embeddings = []
-        for imgs, _, _ in labeled_loader:
-            imgs = imgs.to(self.device)
-            embs = model.get_embedding(imgs).detach().cpu().numpy()
-            labeled_embeddings.append(embs)
-        labeled_embeddings = np.concatenate(labeled_embeddings, axis=0)  # shape: [N_labeled, D]
+            # update min_dists using newly selected center
+            c = Z_U[j:j+1]                               # (1, d)
+            d_new = self._pairwise_dist_to_point(Z_U, c) # (N,)
+            min_dists = torch.minimum(min_dists, d_new)
 
-        # 2. Extract embeddings for unlabeled pool
-        pool_loader = self.dataset.get_dataloader(
-            from_split="train",
-            indices=list(self.pool_indices),
-            batch_size=self.batch_size
-        )
+            # optional: mark chosen point as distance -inf to avoid re-picking
+            min_dists[j] = float('-inf')
 
-        pool_embeddings = []
-        pool_names = []
-        for imgs, _, names in pool_loader:
-            imgs = imgs.to(self.device)
-            embs = model.get_embedding(imgs).detach().cpu().numpy()
-            pool_embeddings.append(embs)
-            pool_names.extend(names)
+        # map local positions back to absolute pool indices
+        chosen_abs = [ordered_pool[j] for j in selected_local]
+        return set(chosen_abs)
+    
+    @torch.inference_mode()
+    def _extract_features(self, loader, device):
+        feats = []
+        ordered = []
+        for imgs, _, batch_indices in loader:
+            imgs = imgs.to(device, non_blocking=True)
+            z = self.model.forward(imgs, only_features=True)   # (B, d) from your wrapper
+            z = z.flatten(1).contiguous()
+            feats.append(z)
+            ordered.extend(batch_indices.tolist() if isinstance(batch_indices, torch.Tensor)
+                           else list(batch_indices))
+        if not feats:
+            return torch.empty(0, 0, device=device), []
+        return torch.cat(feats, dim=0), ordered
 
-        pool_embeddings = np.concatenate(pool_embeddings, axis=0)  # shape: [N_pool, D]
-        pool_names = np.array(pool_names)
-
-        # 3. Run k-center greedy selection
-        selected_indices = self.k_center_greedy(
-            labeled_embeddings, pool_embeddings, pool_names, self.budget_per_iter
-        )
-
-        return set(selected_indices)
-
-    def k_center_greedy(self, labeled_embs, pool_embs, pool_names, budget):
+    @staticmethod
+    def _pairwise_dist_to_point(X: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
         """
-        Greedy k-center selection:
-        Repeatedly pick the point in the pool that is farthest from the labeled set.
+        X: (N, d), c: (1, d)  -> return ||X - c||_2 (N,)
+        Uses algebraic form for speed/memory.
         """
-        if len(labeled_embs) == 0:
-            # No labeled data yet — select randomly
-            return np.random.choice(pool_names, size=budget, replace=False)
+        # ||x - c||^2 = ||x||^2 + ||c||^2 - 2 x·c
+        x_norm2 = (X * X).sum(dim=1)                   # (N,)
+        c_norm2 = (c * c).sum(dim=1)                   # (1,)
+        xc = X @ c.t()                                 # (N, 1)
+        d2 = x_norm2 + c_norm2 - 2.0 * xc.squeeze(1)   # (N,)
+        return torch.sqrt(torch.clamp(d2, min=0.0))
 
-        selected = []
-        distances = np.min(np.linalg.norm(pool_embs[:, None] - labeled_embs[None, :], axis=2), axis=1)
-        for _ in range(budget):
-            idx = np.argmax(distances)
-            selected.append(pool_names[idx])
-            new_center = pool_embs[idx]
-            dists_to_new = np.linalg.norm(pool_embs - new_center, axis=1)
-            distances = np.minimum(distances, dists_to_new)
-        return selected
+    @staticmethod
+    def _min_dist_to_set(U: torch.Tensor,
+                         L: torch.Tensor,
+                         device: torch.device,
+                         chunk: int = 2048) -> torch.Tensor:
+        """
+        For each u in U, compute min_{l in L} ||u - l||_2 in chunks to save memory.
+        U: (N, d), L: (M, d)  →  (N,)
+        """
+        N = U.size(0)
+        min_d = torch.full((N,), float('inf'), device=device)
+        for i in range(0, L.size(0), max(1, int(chunk))):
+            L_i = L[i:i+chunk]                           # (c, d)
+            # torch.cdist is efficient and numerically stable
+            d = torch.cdist(U, L_i, p=2)                 # (N, c)
+            min_d = torch.minimum(min_d, d.min(dim=1).values)
+        return min_d
 
     
 def plot_results(activity_sample_1: ActiveLearningPipeline, activity_sample_2: ActiveLearningPipeline = None):
