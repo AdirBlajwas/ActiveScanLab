@@ -15,13 +15,13 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, Subset
 import traceback
 import time
-
+import json
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from custom_dataset import ChestXrayDataset
 from classifier_models import Resnet18Model
-from active_learning_models import ActiveLearningPipeline, BADGESamplingActiveLearning, CoreSetSamplingActiveLearning
+from active_learning_models import *
 
 
 def plot_results(pipeline):

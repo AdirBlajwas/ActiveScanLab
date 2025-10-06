@@ -500,6 +500,83 @@ class CoreSetSamplingActiveLearning(ActiveLearningPipeline):
             min_d = torch.minimum(min_d, d.min(dim=1).values)
         return min_d
 
+from typing import Optional
+import random
+import torch
+
+class HybridBADGECoreSetActiveLearning(BADGESamplingActiveLearning,
+                                       CoreSetSamplingActiveLearning):
+    def __init__(self,
+                 *args,
+                 badge_ratio: float = 0.5,                 # fraction of budget to BADGE (0..1)
+                 badge_subsample: Optional[int] = None,
+                 badge_fp16: bool = False,
+                 coreset_subsample: Optional[int] = None,
+                 l2_norm: bool = True,
+                 dist_chunk: int = 2048,
+                 **kwargs):
+        # Call into parents (and base) cooperatively
+        super().__init__(*args,
+                         badge_subsample=badge_subsample,
+                         badge_fp16=badge_fp16,
+                         coreset_subsample=coreset_subsample,
+                         l2_norm=l2_norm,
+                         dist_chunk=dist_chunk,
+                         **kwargs)
+        # Clamp ratio for safety
+        self.badge_ratio = max(0.0, min(1.0, float(badge_ratio)))
+
+    @torch.inference_mode()
+    def _sampling(self, **kwargs):
+        orig_budget = int(self.budget_per_iter)
+        if orig_budget <= 0:
+            return set()
+
+        # Split by ratio
+        badge_k = int(round(orig_budget * self.badge_ratio))
+        coreset_k = orig_budget - badge_k
+        print(f"[HYBRID] budget={orig_budget} → BADGE={badge_k}, CoreSet={coreset_k} (badge_ratio={self.badge_ratio:.2f})")
+
+        # Run BADGE share
+        try:
+            self.budget_per_iter = badge_k
+            badge_set = set(BADGESamplingActiveLearning._sampling(self, **kwargs))
+        finally:
+            self.budget_per_iter = orig_budget
+
+        # Run CoreSet share
+        try:
+            self.budget_per_iter = coreset_k
+            coreset_set = set(CoreSetSamplingActiveLearning._sampling(self, **kwargs))
+        finally:
+            self.budget_per_iter = orig_budget
+
+        union_set = badge_set | coreset_set
+        print(f"[HYBRID] BADGE={len(badge_set)}, CoreSet={len(coreset_set)}, union={len(union_set)}")
+
+        # Trim if union > budget (use seed for reproducibility if present)
+        if len(union_set) > orig_budget:
+            rng = random.Random(getattr(self, "seed", None))
+            union_set = set(rng.sample(list(union_set), orig_budget))
+            print(f"[HYBRID] Union > budget; trimmed to {orig_budget}")
+            return union_set
+
+        # Top-up via CoreSet if union < budget ## maybe to much???
+        if len(union_set) < orig_budget:
+            remaining_k = orig_budget - len(union_set)
+            print(f"[HYBRID] Union < budget; topping up {remaining_k} via CoreSet from remaining pool")
+            original_pool = self.pool_indices
+            try:
+                self.pool_indices = set(original_pool) - union_set
+                self.budget_per_iter = remaining_k
+                top_up = set(CoreSetSamplingActiveLearning._sampling(self, **kwargs))
+            finally:
+                self.pool_indices = original_pool
+                self.budget_per_iter = orig_budget
+            union_set |= top_up
+
+        return union_set
+
     
 def plot_results(activity_sample_1: ActiveLearningPipeline, activity_sample_2: ActiveLearningPipeline = None):
     plt.figure(figsize=(10, 6))
