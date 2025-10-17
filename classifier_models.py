@@ -20,13 +20,11 @@ class BaseResnetModel(nn.Module, ABC):
             classifier_params = self.get_classifier_parameters()
             for param in classifier_params:
                 param.requires_grad = True
-
-        if optimizer == 'Adam':
-            self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        elif optimizer == 'SGD':
-            self.optimizer = torch.optim.SGD(self.parameters(), lr=lr)
-        else:
-            raise ValueError(f"Invalid optimizer: {optimizer}")
+                
+        self._optimizer_name = optimizer
+        self._lr = lr
+        self._build_optimizer()
+        
 
         if loss_function == 'BCEWithLogitsLoss':
             self.loss_function = torch.nn.BCEWithLogitsLoss()
@@ -35,7 +33,15 @@ class BaseResnetModel(nn.Module, ABC):
         else:
             raise ValueError(f"Invalid loss function: {loss_function}")
         
-    
+    def _build_optimizer(self):
+        trainable = [p for p in self.parameters() if p.requires_grad]
+        if self._optimizer_name == 'Adam':
+            self.optimizer = torch.optim.Adam(trainable, lr=self._lr)
+        elif self._optimizer_name == 'SGD':
+            self.optimizer = torch.optim.SGD(trainable, lr=self._lr, momentum=0.9)
+        else:
+            raise ValueError(f"Invalid optimizer: {self._optimizer_name}")
+        
     def train_model(self, device, dataloader, epochs=3):
         self.model.to(device)
         self.model.train()
@@ -93,27 +99,29 @@ class BaseResnetModel(nn.Module, ABC):
         return accuracy, recall
     
     def reset_classifier_head(self, num_classes: int = None):
-        """
-        Reinitialize the last linear layer to random weights.
-        Works for both .fc (ResNet) and .classifier (DenseNet).
-        """
-        print("[CLASSIFIER] Reinitialized the final classifier head.")
         num_classes = 1 if num_classes is None else num_classes
-
         head = self.get_classifier_module()
-        if hasattr(head, "in_features"):
-            in_f = head.in_features
-        else:
+        if not hasattr(head, "in_features"):
             raise ValueError("Classifier head does not expose in_features")
+        in_f = head.in_features
 
         new_head = nn.Linear(in_f, num_classes)
-        # Kaiming init (fan_out for classifier is fine; defaults work too)
         nn.init.kaiming_normal_(new_head.weight, nonlinearity="linear")
         if new_head.bias is not None:
             nn.init.zeros_(new_head.bias)
 
         self.update_classifier(new_head)
+
+        # ensure the new head is trainable
+        for p in self.get_classifier_parameters():
+            p.requires_grad = True
+
+        # CRITICAL: rebuild optimizer so it sees the new parameters
+        self._build_optimizer()
+
+        print("[CLASSIFIER] Reinitialized the final classifier head and rebuilt optimizer.")
         return new_head
+
         
     
     def _apply_classifier(self, z: torch.Tensor) -> torch.Tensor:

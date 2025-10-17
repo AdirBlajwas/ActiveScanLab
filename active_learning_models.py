@@ -20,13 +20,13 @@ class ActiveLearningPipeline:
                  model_name: str,
                  objective_function_name: str = 'BCEWithLogitsLoss',
                  optimizer_name: str = 'Adam',
-                 lr = 1e-2,
+                 lr = 1e-3,
                  root_dir = None,
                  dataset=None,
                  batch_size=32,
                  test_sample_size=None,
                  seed=42,
-                 max_train_size=60000,
+                 max_train_size=60000, 
                  resume_iter: int = None): #NOTE: update default values later as needed
 
         if dataset is None and root_dir is None:
@@ -48,13 +48,16 @@ class ActiveLearningPipeline:
             self.pool_indices = set(self.dataset.train_indices)
             # Initialize train_indices with a random 10% of the pool as the initial labeled set
             total_pool = list(self.pool_indices)
-            initial_train_size = max(1, int(0.1 * len(total_pool)))
+            initial_train_size = max(1, int(0.1 * len(total_pool))) # TODO- alexa: maybe 0.08 so it will be smaller
+            print(f"Starting fresh, initializing train set with {initial_train_size} samples")
             self.train_indices = set(random.sample(total_pool, initial_train_size))
             self._update_pool_indices(self.train_indices)
             self.start_iteration = 0
         else:
             print(f"Resuming from iteration {resume_iter}, loading previous train and pool indices from files")
             self.train_indices, self.pool_indices = self._load_checkpoint(resume_iter)
+            if self.train_indices is None or self.pool_indices is None:
+                raise FileNotFoundError(f"Checkpoint for iteration {resume_iter} not found: checkpoints/iteration_{resume_iter}.pkl")
             self.start_iteration = resume_iter + 1
         
         self.test_indices = self.dataset.test_indices
@@ -82,7 +85,7 @@ class ActiveLearningPipeline:
     def _save_checkpoint(self, iteration):
         """Save train and pool indices at the end of each iteration."""
         os.makedirs("checkpoints", exist_ok=True)
-        checkpoint_path = f"checkpoints/iteration_{iteration}.pkl"
+        checkpoint_path = f"checkpoints/iteration_{iteration}.pkl" # TODO- alexa: write here a name to know what model im running
         with open(checkpoint_path, "wb") as f:
             pickle.dump({
                 "train_indices": self.train_indices,
