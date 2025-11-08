@@ -1,4 +1,4 @@
-from custom_dataset import ChestXrayDataset
+from dataset import ChestXrayDataset
 from classifier_models import Resnet18Model, Resnet50Model, Densenet121Model
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
@@ -12,7 +12,7 @@ import numpy as np
 import os
 import pickle
 class ActiveLearningPipeline:
-    def __init__(self, 
+    def __init__(self,
                  device,
                  iterations,
                  epochs_per_iter,
@@ -26,7 +26,8 @@ class ActiveLearningPipeline:
                  batch_size=32,
                  test_sample_size=None,
                  seed=42,
-                 max_train_size=60000, 
+                 max_train_size=60000,
+                 initial_train_ratio: float = 0.1,
                  resume_iter: int = None): #NOTE: update default values later as needed
 
         if dataset is None and root_dir is None:
@@ -46,9 +47,9 @@ class ActiveLearningPipeline:
         self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size, shuffle=False)
         if not resume_iter:
             self.pool_indices = set(self.dataset.train_indices)
-            # Initialize train_indices with a random 10% of the pool as the initial labeled set
+            # Initialize train_indices with a random initial_train_ratio of the pool as the initial labeled set
             total_pool = list(self.pool_indices)
-            initial_train_size = max(1, int(0.1 * len(total_pool))) # TODO- alexa: maybe 0.08 so it will be smaller
+            initial_train_size = max(1, int(initial_train_ratio * len(total_pool)))
             print(f"Starting fresh, initializing train set with {initial_train_size} samples")
             self.train_indices = set(random.sample(total_pool, initial_train_size))
             self._update_pool_indices(self.train_indices)

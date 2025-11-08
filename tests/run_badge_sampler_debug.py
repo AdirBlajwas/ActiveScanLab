@@ -19,7 +19,7 @@ import json
 # Add current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from custom_dataset import ChestXrayDataset
+from dataset import ChestXrayDataset
 from classifier_models import Resnet18Model
 from active_learning_models import *
 
@@ -60,7 +60,7 @@ def coreset_debug():
     print(f"[DEBUG] ===== Starting CoreSet Sampler Debug Run =====")
 
     # Configuration
-    dataset_path     = "nih_chest_xrays_light"
+    dataset_path     = "../nih_chest_xrays_light"
     batch_size       = 32
     epochs_per_iter  = 2
     iterations       = 2
@@ -203,7 +203,7 @@ def badge_debug():
     print(f"[DEBUG] ===== Starting BADGE Sampler Debug Run =====")
     
     # Configuration
-    dataset_path = "nih_chest_xrays_light"
+    dataset_path = "../nih_chest_xrays_light"
     batch_size = 32
     epochs_per_iter = 80
     iterations = 10
