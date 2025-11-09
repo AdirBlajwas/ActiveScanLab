@@ -65,6 +65,25 @@ class ExperimentConfig:
         >>> print(config.ITERATIONS)
         10
     """
+    CONFIG_NAME : str
+    DATASET_PATH : str
+    BATCH_SIZE : int
+    EPOCHS_PER_ITER : int
+    MODEL_NAME : str
+    OPTIMIZER_NAME : str
+    LOSS_FUNCTION : str
+    LEARNING_RATE : float
+    ITERATIONS : int
+    BUDGET_PER_ITER : int
+    TEST_SAMPLE_SIZE : int
+    MAX_TRAIN_SIZE : int
+    INITIAL_TRAIN_RATIO : float
+    SEEDS : list
+    SAMPLERS_CONFIG : dict
+    RESULTS_DIR : str
+    CHECKPOINT_DIR : str
+    PLOTS_DIR : str
+    CONFIGS_DIR : str
 
     def __init__(self):
         """
