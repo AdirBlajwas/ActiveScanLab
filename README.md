@@ -8,10 +8,10 @@ Compare active learning sampling strategies (Random vs Hybrid BADGE+CoreSet) on 
 
 ```bash
 # Run full experiment (default settings)
-python main_runner.py --mode full
+python main.py --mode full
 
 # View results
-python main_runner.py --mode plot
+python main.py --mode plot
 ```
 
 ---
@@ -36,13 +36,13 @@ python main_runner.py --mode plot
 **Examples:**
 ```bash
 # Random sampler only
-python main_runner.py --mode full --samplers random
+python main.py --mode full --samplers random
 
 # Hybrid sampler only
-python main_runner.py --mode full --samplers hybrid
+python main.py --mode full --samplers hybrid
 
 # Both (default if omitted)
-python main_runner.py --mode full --samplers random hybrid
+python main.py --mode full --samplers random hybrid
 ```
 
 ### ⚙️ Custom Configuration
@@ -56,12 +56,12 @@ Load settings from `configurations/CONFIG_NAME.json`
 **Examples:**
 ```bash
 # Quick test (3 iterations, fast)
-python main_runner.py --mode full --config quick_test
+python main.py --mode full --config quick_test
 
 # From log file configurations
-python main_runner.py --mode full --config run1
-python main_runner.py --mode full --config run2
-python main_runner.py --mode full --config run3
+python main.py --mode full --config run1
+python main.py --mode full --config run2
+python main.py --mode full --config run3
 ```
 
 **Default:** Uses built-in defaults when omitted
@@ -77,10 +77,10 @@ Start fresh, ignore checkpoints
 **Examples:**
 ```bash
 # Auto-resume from checkpoint (default)
-python main_runner.py --mode full --config run1
+python main.py --mode full --config run1
 
 # Start from scratch
-python main_runner.py --mode full --config run1 --no-resume
+python main.py --mode full --config run1 --no-resume
 ```
 
 ---
@@ -91,46 +91,46 @@ python main_runner.py --mode full --config run1 --no-resume
 
 ```bash
 # Fast test before full run
-python main_runner.py --mode full --config quick_test
+python main.py --mode full --config quick_test
 
 # If good, run production
-python main_runner.py --mode full --config run1
+python main.py --mode full --config run1
 ```
 
 ### Production Runs
 
 ```bash
 # Full experiment (both samplers, auto-resume)
-python main_runner.py --mode full --config run1
+python main.py --mode full --config run1
 
 # Hybrid only with run2 settings
-python main_runner.py --mode full --samplers hybrid --config run2
+python main.py --mode full --samplers hybrid --config run2
 
 # Fresh start without resume
-python main_runner.py --mode full --config run3 --no-resume
+python main.py --mode full --config run3 --no-resume
 ```
 
 ### Plotting
 
 ```bash
 # Plot all available results
-python main_runner.py --mode plot
+python main.py --mode plot
 
 # Plot specific sampler
-python main_runner.py --mode plot --samplers random
+python main.py --mode plot --samplers random
 
 # Plot specific configuration
-python main_runner.py --mode plot --config run1
+python main.py --mode plot --config run1
 ```
 
 ### Combined Options
 
 ```bash
 # Hybrid only, run3 config, fresh start
-python main_runner.py --mode full --samplers hybrid --config run3 --no-resume
+python main.py --mode full --samplers hybrid --config run3 --no-resume
 
 # Random only, quick test
-python main_runner.py --mode full --samplers random --config quick_test
+python main.py --mode full --samplers random --config quick_test
 ```
 
 ---
@@ -167,7 +167,7 @@ Create `configurations/my_experiment.json`:
 
 Run with:
 ```bash
-python main_runner.py --mode full --config my_experiment
+python main.py --mode full --config my_experiment
 ```
 
 ### 🔧 Configuration Parameters
@@ -241,37 +241,37 @@ python main_runner.py --mode full --config my_experiment
 # ========== FULL EXPERIMENTS ==========
 
 # All defaults (both samplers, default config, auto-resume)
-python main_runner.py --mode full
+python main.py --mode full
 
 # With custom config
-python main_runner.py --mode full --config run1
+python main.py --mode full --config run1
 
 # Single sampler
-python main_runner.py --mode full --samplers random
-python main_runner.py --mode full --samplers hybrid
+python main.py --mode full --samplers random
+python main.py --mode full --samplers hybrid
 
 # Single sampler + config
-python main_runner.py --mode full --samplers hybrid --config run2
+python main.py --mode full --samplers hybrid --config run2
 
 # Fresh start
-python main_runner.py --mode full --no-resume
-python main_runner.py --mode full --config run1 --no-resume
+python main.py --mode full --no-resume
+python main.py --mode full --config run1 --no-resume
 
 # ========== PLOTTING ==========
 
 # All results
-python main_runner.py --mode plot
+python main.py --mode plot
 
 # Specific sampler
-python main_runner.py --mode plot --samplers random
+python main.py --mode plot --samplers random
 
 # Specific config
-python main_runner.py --mode plot --config run1
+python main.py --mode plot --config run1
 
 # ========== COMBINED OPTIONS ==========
 
-python main_runner.py --mode full --samplers hybrid --config run3 --no-resume
-python main_runner.py --mode full --samplers random hybrid --config run2
+python main.py --mode full --samplers hybrid --config run3 --no-resume
+python main.py --mode full --samplers random hybrid --config run2
 ```
 
 ---
@@ -282,24 +282,24 @@ python main_runner.py --mode full --samplers random hybrid --config run2
 
 ```bash
 # Step 1: Quick test
-python main_runner.py --mode full --config quick_test
+python main.py --mode full --config quick_test
 
 # Step 2: If good, full run
-python main_runner.py --mode full --config run1
+python main.py --mode full --config run1
 ```
 
 ### 🔬 2. Sampler Comparison
 
 ```bash
 # Run both
-python main_runner.py --mode full --config run1
+python main.py --mode full --config run1
 
 # Or run separately
-python main_runner.py --mode full --samplers random --config run1
-python main_runner.py --mode full --samplers hybrid --config run1
+python main.py --mode full --samplers random --config run1
+python main.py --mode full --samplers hybrid --config run1
 
 # Compare
-python main_runner.py --mode plot --config run1
+python main.py --mode plot --config run1
 ```
 
 ### 🏗️ 3. Interrupted Experiment
@@ -308,10 +308,10 @@ python main_runner.py --mode plot --config run1
 # Experiment was interrupted...
 
 # Just run same command - auto-resumes!
-python main_runner.py --mode full --config run2
+python main.py --mode full --config run2
 
 # Or start over:
-python main_runner.py --mode full --config run2 --no-resume
+python main.py --mode full --config run2 --no-resume
 ```
 
 ### 📊 4. Model Comparison
@@ -319,12 +319,12 @@ python main_runner.py --mode full --config run2 --no-resume
 ```bash
 # Create configs: resnet18.json, resnet50.json, densenet.json
 
-python main_runner.py --mode full --config resnet18
-python main_runner.py --mode full --config resnet50
-python main_runner.py --mode full --config densenet
+python main.py --mode full --config resnet18
+python main.py --mode full --config resnet50
+python main.py --mode full --config densenet
 
 # Compare all
-python main_runner.py --mode plot
+python main.py --mode plot
 ```
 
 ---
@@ -419,7 +419,7 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}')"
 ## Need Help?
 
 ```bash
-python main_runner.py --help
+python main.py --help
 ```
 
 Shows complete CLI documentation with examples.

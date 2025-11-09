@@ -9,8 +9,8 @@ active learning samplers across multiple random seeds. It provides:
 - Independent plotting functionality for analyzing results
 
 Usage:
-    python main_runner.py --mode full      # Run full experiments
-    python main_runner.py --mode plot      # Only generate plots from existing results
+    python main.py --mode full      # Run full experiments
+    python main.py --mode plot      # Only generate plots from existing results
 """
 
 import os
@@ -894,31 +894,31 @@ def main():
         epilog="""
 Examples:
   # Run full experimental pipeline (both samplers, default config)
-  python main_runner.py --mode full
+  python main.py --mode full
 
   # Run with custom configuration
-  python main_runner.py --mode full --config my_experiment
+  python main.py --mode full --config my_experiment
 
   # Run only random sampler with custom config
-  python main_runner.py --mode full --samplers random --config quick_test
+  python main.py --mode full --samplers random --config quick_test
 
   # Run only hybrid sampler
-  python main_runner.py --mode full --samplers hybrid
+  python main.py --mode full --samplers hybrid
 
   # Run both random and hybrid (explicit)
-  python main_runner.py --mode full --samplers random hybrid
+  python main.py --mode full --samplers random hybrid
 
   # Generate plots from existing results (all available)
-  python main_runner.py --mode plot
+  python main.py --mode plot
 
   # Generate plots only for random sampler
-  python main_runner.py --mode plot --samplers random
+  python main.py --mode plot --samplers random
 
   # Run without resuming from checkpoints (start fresh)
-  python main_runner.py --mode full --no-resume
+  python main.py --mode full --no-resume
 
   # Run with config and no resume
-  python main_runner.py --mode full --config my_experiment --no-resume
+  python main.py --mode full --config my_experiment --no-resume
         """
     )
     parser.add_argument(
