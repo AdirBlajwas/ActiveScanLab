@@ -1,411 +1,182 @@
-# Active Learning Comparison Framework
+# ActiveScanLab: Active Learning for Chest X-ray Classification
 
-Compare active learning sampling strategies (Random vs Hybrid BADGE+CoreSet) on chest X-ray classification.
-
----
-
-## Quick Start
-
-```bash
-# Run full experiment (default settings)
-python main.py --mode full
-
-# View results
-python main.py --mode plot
-```
+A research framework for comparing active learning strategies (Random vs Hybrid BADGE+CoreSet) on medical image classification using the NIH Chest X-ray dataset.
 
 ---
 
-## Command-Line Options
+## 🚀 Quick Start
 
-### 🎯 Execution Mode
+### 1. Setup Environment
 
-```bash
---mode [full|plot]
-```
+#### 1.1 Create Virtual Environment
 
-- `full` - Run experiments + generate plots
-- `plot` - Only generate plots from saved results
-
-### 🔬 Select Samplers
+Clone the repository and set up the Python environment:
 
 ```bash
---samplers [random] [hybrid]
-```
-
-**Examples:**
-```bash
-# Random sampler only
-python main.py --mode full --samplers random
-
-# Hybrid sampler only
-python main.py --mode full --samplers hybrid
-
-# Both (default if omitted)
-python main.py --mode full --samplers random hybrid
-```
-
-### ⚙️ Custom Configuration
-
-```bash
---config CONFIG_NAME
-```
-
-Load settings from `configurations/CONFIG_NAME.json`
-
-**Examples:**
-```bash
-# Quick test (3 iterations, fast)
-python main.py --mode full --config quick_test
-
-# From log file configurations
-python main.py --mode full --config run1
-python main.py --mode full --config run2
-python main.py --mode full --config run3
-```
-
-**Default:** Uses built-in defaults when omitted
-
-### 🔄 Resume Control
-
-```bash
---no-resume
-```
-
-Start fresh, ignore checkpoints
-
-**Examples:**
-```bash
-# Auto-resume from checkpoint (default)
-python main.py --mode full --config run1
-
-# Start from scratch
-python main.py --mode full --config run1 --no-resume
-```
-
----
-
-## Common Usage Patterns
-
-### Quick Testing
-
-```bash
-# Fast test before full run
-python main.py --mode full --config quick_test
-
-# If good, run production
-python main.py --mode full --config run1
-```
-
-### Production Runs
-
-```bash
-# Full experiment (both samplers, auto-resume)
-python main.py --mode full --config run1
-
-# Hybrid only with run2 settings
-python main.py --mode full --samplers hybrid --config run2
-
-# Fresh start without resume
-python main.py --mode full --config run3 --no-resume
-```
-
-### Plotting
-
-```bash
-# Plot all available results
-python main.py --mode plot
-
-# Plot specific sampler
-python main.py --mode plot --samplers random
-
-# Plot specific configuration
-python main.py --mode plot --config run1
-```
-
-### Combined Options
-
-```bash
-# Hybrid only, run3 config, fresh start
-python main.py --mode full --samplers hybrid --config run3 --no-resume
-
-# Random only, quick test
-python main.py --mode full --samplers random --config quick_test
-```
-
----
-
-## Configuration Files
-
-### 📁 Location
-
-All configs stored in `configurations/` directory as JSON files.
-
-### 📋 Available Configurations
-
-| Config | Epochs | Iterations | Budget | Initial % | Description |
-|--------|--------|------------|--------|-----------|-------------|
-| `quick_test` | 1 | 3 | 500 | 10% | Fast testing |
-| `run1` | 80 | 10 | 1000 | 10% | Balanced run |
-| `run2` | 100 | 12 | 1000 | 10% | More epochs |
-| `run3` | 80 | 16 | 2500 | 8% | Large budget |
-
-### ✏️ Create Custom Config
-
-Create `configurations/my_experiment.json`:
-
-```json
-{
-  "ITERATIONS": 5,
-  "EPOCHS_PER_ITER": 50,
-  "BUDGET_PER_ITER": 1000,
-  "SEEDS": [42],
-  "MODEL_NAME": "resnet50",
-  "INITIAL_TRAIN_RATIO": 0.1
-}
-```
-
-Run with:
-```bash
-python main.py --mode full --config my_experiment
-```
-
-### 🔧 Configuration Parameters
-
-**Training:**
-- `BATCH_SIZE` (32) - Training batch size
-- `EPOCHS_PER_ITER` (2) - Epochs per AL iteration
-- `MODEL_NAME` ("resnet18") - `resnet18` | `resnet50` | `densenet121`
-- `LEARNING_RATE` (0.001) - Learning rate
-- `OPTIMIZER_NAME` ("Adam") - `Adam` | `SGD`
-
-**Active Learning:**
-- `ITERATIONS` (10) - Number of AL iterations
-- `BUDGET_PER_ITER` (1000) - Samples to label per iteration
-- `TEST_SAMPLE_SIZE` (1000) - Test set size (`null` = all)
-- `INITIAL_TRAIN_RATIO` (0.1) - Initial labeled set % (0.1 = 10%)
-- `SEEDS` ([42, 7, 1]) - Random seeds list
-
-**Hybrid Sampler (optional):**
-```json
-"SAMPLERS_CONFIG": {
-  "hybrid": {
-    "params": {
-      "badge_ratio": 0.5,
-      "badge_subsample": 20000,
-      "badge_fp16": false,
-      "coreset_subsample": 20000,
-      "l2_norm": true,
-      "dist_chunk": 2048
-    }
-  }
-}
-```
-
-**Partial Override:** Only specify parameters you want to change. Others use defaults.
-
----
-
-## Output Files
-
-### 📊 Results (`results/`)
-
-**Naming:**
-- Default config: `random_seed42_results.json`
-- Custom config: `random_seed42_config_run1_results.json`
-
-**Contains:**
-- Accuracy & recall scores per iteration
-- Experiment configuration
-- Status (completed/in_progress/failed)
-- Timestamp
-
-### 💾 Checkpoints (`checkpoints_main/`)
-
-- Auto-saved after each iteration
-- Contains: model weights, optimizer state, train/pool indices
-- Enables automatic resume after interruption
-- Naming includes config name
-
-### 📈 Plots (`plots/`)
-
-- Mean curves ± standard deviation
-- Individual run trajectories (faded)
-- Timestamp-based filenames
-
----
-
-## Complete Command Reference
-
-```bash
-# ========== FULL EXPERIMENTS ==========
-
-# All defaults (both samplers, default config, auto-resume)
-python main.py --mode full
-
-# With custom config
-python main.py --mode full --config run1
-
-# Single sampler
-python main.py --mode full --samplers random
-python main.py --mode full --samplers hybrid
-
-# Single sampler + config
-python main.py --mode full --samplers hybrid --config run2
-
-# Fresh start
-python main.py --mode full --no-resume
-python main.py --mode full --config run1 --no-resume
-
-# ========== PLOTTING ==========
-
-# All results
-python main.py --mode plot
-
-# Specific sampler
-python main.py --mode plot --samplers random
-
-# Specific config
-python main.py --mode plot --config run1
-
-# ========== COMBINED OPTIONS ==========
-
-python main.py --mode full --samplers hybrid --config run3 --no-resume
-python main.py --mode full --samplers random hybrid --config run2
-```
-
----
-
-## Workflows
-
-### 🧪 1. Test → Production
-
-```bash
-# Step 1: Quick test
-python main.py --mode full --config quick_test
-
-# Step 2: If good, full run
-python main.py --mode full --config run1
-```
-
-### 🔬 2. Sampler Comparison
-
-```bash
-# Run both
-python main.py --mode full --config run1
-
-# Or run separately
-python main.py --mode full --samplers random --config run1
-python main.py --mode full --samplers hybrid --config run1
-
-# Compare
-python main.py --mode plot --config run1
-```
-
-### 🏗️ 3. Interrupted Experiment
-
-```bash
-# Experiment was interrupted...
-
-# Just run same command - auto-resumes!
-python main.py --mode full --config run2
-
-# Or start over:
-python main.py --mode full --config run2 --no-resume
-```
-
-### 📊 4. Model Comparison
-
-```bash
-# Create configs: resnet18.json, resnet50.json, densenet.json
-
-python main.py --mode full --config resnet18
-python main.py --mode full --config resnet50
-python main.py --mode full --config densenet
-
-# Compare all
-python main.py --mode plot
-```
-
----
-
-## Key Features
-
-✅ **Auto-Checkpointing** - Never lose progress
-✅ **Auto-Resume** - Continue from checkpoint by default
-✅ **Multi-Seed** - Statistical robustness
-✅ **JSON Config** - Flexible, version-controllable
-✅ **Partial Override** - Only specify what changes
-✅ **Config Tracking** - Config name in all output files
-✅ **Independent Plotting** - Regenerate plots anytime
-✅ **Sampler Filtering** - Run specific samplers only
-
----
-
-## Troubleshooting
-
-**Q: Experiments not resuming?**
-A: Check `checkpoints_main/` for checkpoint files. Use `--no-resume` to start fresh.
-
-**Q: No plots generated?**
-A: Ensure completed experiments exist in `results/` directory.
-
-**Q: Out of memory?**
-A: Reduce `BATCH_SIZE`, lower `badge_subsample`/`coreset_subsample`, or use `"badge_fp16": true`
-
-**Q: Config file not found?**
-A: Check file exists: `configurations/YOUR_CONFIG.json`
-
-**Q: How to see all options?**
-A: Run `python main_runner.py --help`
-
----
-
-## Project Structure
-
-```
-ActiveScanLab/
-├── main_runner.py              # Main pipeline ⭐
-├── active_learning_models.py   # AL samplers
-├── classifier_models.py        # Model architectures
-├── custom_dataset.py           # Dataset handling
-├── configurations/             # Config files
-│   ├── quick_test.json        # Fast testing
-│   ├── run1.json              # Experiment 1
-│   ├── run2.json              # Experiment 2
-│   └── run3.json              # Experiment 3
-├── results/                    # JSON results
-├── checkpoints_main/           # Model checkpoints
-└── plots/                      # Generated plots
-```
-
----
-
-## Setup (First Time Only)
-
-### 1. Create Virtual Environment
-
-```bash
+# Clone the repository
+git clone https://github.com/AdirBlajwas/ActiveScanLab.git
+cd ActiveScanLab
+
+# Run the setup script
 chmod +x setup_venv.sh
 ./setup_venv.sh
 ```
 
-### 2. Activate Environment
+This will:
+- Create a Python virtual environment in `venv/`
+- Install all required dependencies (PyTorch, NumPy, Pandas, etc.)
 
-```bash
-source venv/bin/activate
-```
+#### 1.2 Download and Prepare Dataset
 
-### 3. Verify Installation
+1. **Download the dataset** from Google Drive:
+   ```
+   https://drive.google.com/file/d/1QvS_H5ucGGTcWwgC707uN7cVQmB-9P9l/view?usp=sharing
+   ```
 
-```bash
-python -c "import torch; print(f'PyTorch: {torch.__version__}')"
-```
+2. **Unzip the dataset** into the main project directory:
+   ```bash
+   # After downloading, unzip the file
+   unzip nih_chest_xrays_light.zip
+
+   # Ensure the directory structure looks like this:
+   # ActiveScanLab/
+   # ├── nih_chest_xrays_light/
+   # │   ├── images_001_lighter/
+   # │   ├── images_002_lighter/
+   # │   ├── ...
+   # │   ├── Data_Entry_2017.csv
+   # │   ├── train_val_list.txt
+   # │   └── test_list.txt
+   # ├── main.py
+   # └── ...
+   ```
+
+3. **Verify the dataset** is properly placed:
+   ```bash
+   ls nih_chest_xrays_light/
+   # Should show: images_001_lighter, images_002_lighter, ..., Data_Entry_2017.csv
+   ```
 
 ---
 
-## Dependencies
+## 🔬 Reproducing Project Results
 
+### 2.1 Run Experiments with Configurations
+
+Activate the virtual environment and run experiments with the three main configurations:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run Experiment 1 (80 epochs, 10 iterations, 10% initial labeled)
+python main.py --mode full --config run1
+
+# Run Experiment 2 (100 epochs, 12 iterations, 10% initial labeled)
+python main.py --mode full --config run2
+
+# Run Experiment 3 (80 epochs, 16 iterations, 8% initial labeled, larger budget)
+python main.py --mode full --config run3
+```
+
+Each command will:
+- Run both **Random** and **Hybrid** active learning samplers
+- Train across multiple seeds for statistical robustness
+- Save results to `results/` directory
+- Save checkpoints to `checkpoints_main/` for automatic resumption
+- Generate comparison plots in `plots/` directory
+
+**Note:** These experiments can take several hours to complete. The pipeline automatically saves checkpoints after each iteration, so you can safely interrupt and resume later by running the same command.
+
+### 2.2 Advanced Usage
+
+For detailed information about all available options, configurations, and workflows, see:
+
+📖 **[MAIN_RUNNING_GUIDE.md](MAIN_RUNNING_GUIDE.md)**
+
+This guide covers:
+- Running specific samplers only (`--samplers random` or `--samplers hybrid`)
+- Creating custom configurations
+- Plotting existing results (`--mode plot`)
+- Resumption control (`--no-resume`)
+- Complete parameter reference
+
+---
+
+## 📁 Repository Structure
+
+### Key Python Files
+
+#### `main.py`
+Main experimental pipeline orchestrator. Handles:
+- Configuration management (JSON-based configs)
+- Multi-seed experiment execution
+- Automatic checkpointing and resume
+- Results aggregation and plotting
+- Command-line interface
+
+#### `active_learning_models.py`
+Implementation of active learning sampling strategies:
+- **`ActiveLearningPipeline`**: Base class with training loop and state management
+- **`RandomSamplingActiveLearning`**: Random baseline sampler
+- **`BADGESamplingActiveLearning`**: Gradient-based uncertainty sampling (BADGE method)
+- **`CoreSetSamplingActiveLearning`**: Diversity-based sampling (greedy k-center)
+- **`HybridBADGECoreSetActiveLearning`**: Combined BADGE + CoreSet approach
+
+#### `classifier_models.py`
+Deep learning model architectures for binary classification:
+- **`BaseResnetModel`**: Abstract base class with training/evaluation logic
+- **`Resnet18Model`**: ResNet18 backbone (512-dim features)
+- **`Resnet50Model`**: ResNet50 backbone (2048-dim features)
+- **`Densenet121Model`**: DenseNet121 backbone (1024-dim features)
+
+All models support feature extraction for active learning samplers.
+
+#### `dataset.py`
+NIH Chest X-ray dataset handling:
+- **`ChestXrayDataset`**: Main dataset class with flexible train/test splitting
+- Automatic image discovery across multiple folders
+- Binary classification: 0 = No Finding, 1 = Finding
+
+### Directories
+
+#### `configurations/`
+JSON configuration files for experiments:
+- **`run1.json`**: 80 epochs, 10 iterations, 1000 budget/iter
+- **`run2.json`**: 100 epochs, 12 iterations, 1000 budget/iter
+- **`run3.json`**: 80 epochs, 16 iterations, 2500 budget/iter
+
+Each config specifies hyperparameters like epochs, iterations, budget, initial labeled ratio, and sampler parameters.
+
+#### `results/`
+Experiment results in JSON format:
+- Accuracy and recall scores per iteration
+- Full experiment configuration
+- Execution status and timestamps
+- Naming format: `{sampler}_seed{seed}_config_{config}_results.json`
+
+#### `checkpoints_main/`
+Model checkpoints for automatic resumption:
+- Saved after each active learning iteration
+- Contains model weights, optimizer state, and train/pool indices
+- Enables seamless experiment resumption after interruption
+
+#### `plots/`
+Generated visualization plots:
+- Comparison plots with mean ± std deviation
+- Individual seed trajectories
+- Saved as PNG files with timestamps
+
+#### `tests/`
+Testing and debugging utilities:
+- Sampler-specific test scripts
+- Data preprocessing notebooks
+- Experimental validation code
+
+---
+### Dependencies
+
+Core libraries (installed automatically via `setup_venv.sh`):
 - PyTorch >= 2.0.0
 - TorchVision >= 0.15.0
 - NumPy >= 1.21.0
@@ -414,12 +185,53 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}')"
 - matplotlib >= 3.5.0
 - tqdm >= 4.62.0
 
+See `requirements.txt` for complete list.
+
 ---
 
-## Need Help?
+## 📊 Expected Outputs
 
-```bash
-python main.py --help
-```
+After running experiments, you should have:
 
-Shows complete CLI documentation with examples.
+1. **Results** in `results/` directory:
+   - JSON files with accuracy/recall trajectories
+   - One file per sampler-seed-config combination
+
+2. **Checkpoints** in `checkpoints_main/` directory:
+   - Model states for each iteration
+   - Enables resumption if interrupted
+
+3. **Plots** in `plots/` directory:
+   - Comparison visualizations
+   - Mean performance ± standard deviation across seeds
+
+---
+
+## 🐛 Troubleshooting
+
+**Dataset not found?**
+- Ensure `nih_chest_xrays_light/` is in the project root directory
+- Check that `Data_Entry_2017.csv` exists inside
+
+**CUDA out of memory?**
+- Reduce `BATCH_SIZE` in configuration files
+- Lower `badge_subsample` and `coreset_subsample` parameters
+- Use `badge_fp16: true` for memory efficiency
+
+**Virtual environment issues?**
+- Make sure you activated: `source venv/bin/activate`
+- Reinstall: `rm -rf venv && ./setup_venv.sh`
+
+**Experiments interrupted?**
+- Simply rerun the same command - it will auto-resume from the last checkpoint
+- To start fresh: add `--no-resume` flag
+
+
+---
+
+## 📄 License
+
+**[MIT License](LICENSE)**
+
+---
+
