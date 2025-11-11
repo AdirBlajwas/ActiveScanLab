@@ -3,7 +3,7 @@
   "ITERATIONS": 16,
   "BUDGET_PER_ITER": 2500,
   "TEST_SAMPLE_SIZE": null,
-  "SEEDS": [42],
+  "SEEDS": [42, 7],
   "MODEL_NAME": "resnet18",
   "BATCH_SIZE": 32,
   "INITIAL_TRAIN_RATIO": 0.08,
