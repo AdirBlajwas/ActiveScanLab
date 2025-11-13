@@ -12,3 +12,4 @@ setup_venv.bat
 setup.py
 activate_venv.sh
 activescanlab.egg-info/
+checkpoints_main/
