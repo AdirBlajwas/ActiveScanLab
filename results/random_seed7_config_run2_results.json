@@ -1,0 +1,28 @@
+{
+  "experiment_id": "random_seed7_config_run2",
+  "sampler_name": "random",
+  "seed": 7,
+  "config_name": "run2",
+  "status": "in_progress",
+  "current_iteration": 0,
+  "total_iterations": 12,
+  "timestamp": "2025-11-14T15:40:13.742479",
+  "config": {
+    "model_name": "resnet18",
+    "batch_size": 32,
+    "epochs_per_iter": 50,
+    "budget_per_iter": 1000,
+    "test_sample_size": 1000,
+    "learning_rate": 0.001,
+    "optimizer": "Adam",
+    "loss_function": "BCEWithLogitsLoss"
+  },
+  "metrics": {
+    "accuracy_scores": [
+      63.0
+    ],
+    "recall_scores": [
+      75.03999999999999
+    ]
+  }
+}
