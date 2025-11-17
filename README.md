@@ -75,8 +75,6 @@ python main.py --mode full --config run1
 # Run Experiment 2 (100 epochs, 12 iterations, 10% initial labeled)
 python main.py --mode full --config run2
 
-# Run Experiment 3 (80 epochs, 16 iterations, 8% initial labeled, larger budget)
-python main.py --mode full --config run3
 ```
 
 Each command will:
@@ -153,7 +151,6 @@ NIH Chest X-ray dataset handling:
 JSON configuration files for experiments:
 - **`run1.json`**: 80 epochs, 10 iterations, 1000 budget/iter
 - **`run2.json`**: 100 epochs, 12 iterations, 1000 budget/iter
-- **`run3.json`**: 80 epochs, 16 iterations, 2500 budget/iter
 
 Each config specifies hyperparameters like epochs, iterations, budget, initial labeled ratio, and sampler parameters.
 
