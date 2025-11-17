@@ -1,0 +1,46 @@
+{
+  "experiment_id": "hybrid_seed42_config_config1",
+  "sampler_name": "hybrid",
+  "seed": 42,
+  "config_name": "config1",
+  "status": "completed",
+  "current_iteration": 9,
+  "total_iterations": 10,
+  "timestamp": "2025-10-19T16:44:26.425828",
+  "config": {
+    "model_name": "resnet18",
+    "batch_size": 32,
+    "epochs_per_iter": 80,
+    "budget_per_iter": 1000,
+    "test_sample_size": 1000,
+    "learning_rate": 0.001,
+    "optimizer": "Adam",
+    "loss_function": "BCEWithLogitsLoss"
+  },
+  "metrics": {
+    "accuracy_scores": [
+      63.0,
+      63.6,
+      63.9,
+      63.3,
+      64.9,
+      64.8,
+      65.3,
+      64.5,
+      65.6,
+      64.8
+    ],
+    "recall_scores": [
+      73.16,
+      78.89,
+      78.07,
+      75.78,
+      79.05,
+      75.12,
+      81.83,
+      76.76,
+      79.87,
+      82.82
+    ]
+  }
+}
