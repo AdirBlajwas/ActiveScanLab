@@ -88,6 +88,15 @@ Each command will:
 
 **Note:** These experiments can take several hours to complete. The pipeline automatically saves checkpoints after each iteration, so you can safely interrupt and resume later by running the same command.
 
+If you want just to reproduce the plots from existing results without rerunning experiments, use:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+python main.py --mode plot --config run1
+python main.py --mode plot --config run2
+```
+
 ### 2.2 Advanced Usage
 
 For detailed information about all available options, configurations, and workflows, see:

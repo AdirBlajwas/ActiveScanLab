@@ -1,12 +1,12 @@
 {
-  "experiment_id": "hybrid_seed42_config_config1",
+  "experiment_id": "hybrid_seed1_config_config1",
   "sampler_name": "hybrid",
-  "seed": 42,
+  "seed": 1,
   "config_name": "config1",
   "status": "completed",
   "current_iteration": 9,
   "total_iterations": 10,
-  "timestamp": "2025-10-19T16:44:26.425828",
+  "timestamp": "2025-11-16T19:00:00",
   "config": {
     "model_name": "resnet18",
     "batch_size": 32,
@@ -19,28 +19,28 @@
   },
   "metrics": {
     "accuracy_scores": [
-      63.0,
-      63.6,
-      63.9,
-      63.3,
-      64.9,
-      64.8,
-      65.3,
-      64.5,
-      65.6,
-      64.8
+      62.5,
+      62.2,
+      63.2,
+      62.5,
+      63.8,
+      62.0,
+      61.0,
+      59.1,
+      58.7,
+      57.5
     ],
     "recall_scores": [
-      73.16,
-      78.89,
-      78.07,
-      75.78,
-      79.05,
-      75.12,
-      81.83,
-      76.76,
-      79.87,
-      82.82
+      73.69,
+      70.26,
+      74.35,
+      69.61,
+      68.14,
+      66.83,
+      62.91,
+      56.37,
+      55.88,
+      49.18
     ]
   }
 }
