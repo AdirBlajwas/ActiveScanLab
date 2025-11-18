@@ -59,11 +59,11 @@ def hybrid_debug():
     # --------------------
     dataset_path     = "nih_chest_xrays_light"  # adjust if needed
     batch_size       = 32
-    epochs_per_iter  = 2
-    iterations       = 2
+    epochs_per_iter  = 100
+    iterations       = 12
     budget_per_iter  = 1000
     test_sample_size = 1000
-    seed             = 42
+    seed             = 1
 
     # Hybrid-specific knobs
     hybrid_params = {
