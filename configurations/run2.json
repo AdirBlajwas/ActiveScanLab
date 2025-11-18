@@ -1,0 +1,22 @@
+{
+  "EPOCHS_PER_ITER": 100,
+  "ITERATIONS": 12,
+  "BUDGET_PER_ITER": 1000,
+  "TEST_SAMPLE_SIZE": 1000,
+  "SEEDS": [42, 7, 1],
+  "MODEL_NAME": "resnet18",
+  "BATCH_SIZE": 32,
+  "INITIAL_TRAIN_RATIO": 0.1,
+  "SAMPLERS_CONFIG": {
+    "hybrid": {
+      "params": {
+        "badge_ratio": 0.5,
+        "badge_subsample": 20000,
+        "badge_fp16": false,
+        "coreset_subsample": 20000,
+        "l2_norm": true,
+        "dist_chunk": 2048
+      }
+    }
+  }
+}

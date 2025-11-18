@@ -1,4 +1,43 @@
-from custom_dataset import ChestXrayDataset
+"""
+Active Learning Pipeline Module
+
+This module implements various active learning strategies for medical image classification.
+Active learning iteratively selects the most informative unlabeled samples to label,
+aiming to achieve high performance with minimal labeled data.
+
+Implemented Strategies:
+    - Random Sampling: Baseline random selection
+    - BADGE: Batch Active learning by Diverse Gradient Embeddings
+    - CoreSet: Greedy k-center diversity-based sampling
+    - Hybrid: Combines BADGE and CoreSet for balanced uncertainty + diversity
+
+Classes:
+    ActiveLearningPipeline: Base class with training loop and state management
+    RandomSamplingActiveLearning: Random baseline sampler
+    BADGESamplingActiveLearning: Gradient-based uncertainty sampling
+    CoreSetSamplingActiveLearning: Diversity-based sampling
+    HybridBADGECoreSetActiveLearning: Combined BADGE + CoreSet approach
+
+Key Features:
+    - Automatic checkpointing and resume capability
+    - Multi-seed support for statistical robustness
+    - Flexible model architectures (ResNet18/50, DenseNet121)
+    - GPU/MPS acceleration support
+    - Progress tracking and result visualization
+
+Example:
+    >>> pipeline = HybridBADGECoreSetActiveLearning(
+    ...     device=torch.device('cuda'),
+    ...     iterations=10,
+    ...     epochs_per_iter=5,
+    ...     budget_per_iter=1000,
+    ...     model_name='resnet18',
+    ...     seed=42
+    ... )
+    >>> accuracy_scores, recall_scores = pipeline.run_pipeline()
+"""
+
+from dataset import ChestXrayDataset
 from classifier_models import Resnet18Model, Resnet50Model, Densenet121Model
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
@@ -11,8 +50,53 @@ from sklearn.cluster import KMeans
 import numpy as np
 import os
 import pickle
+
+
 class ActiveLearningPipeline:
-    def __init__(self, 
+    """
+    Base class for active learning pipelines with training loop and state management.
+
+    This class handles the core active learning cycle:
+    1. Train model on current labeled set
+    2. Evaluate on test set
+    3. Sample new points from unlabeled pool (implemented by subclasses)
+    4. Add selected points to labeled set
+    5. Save checkpoint
+    6. Repeat
+
+    The pipeline maintains labeled (train) and unlabeled (pool) sets, automatically
+    manages checkpointing for resumption, and supports customizable sampling strategies.
+
+    Args:
+        device: PyTorch device (CPU, CUDA, or MPS)
+        iterations (int): Number of active learning iterations
+        epochs_per_iter (int): Training epochs per iteration
+        budget_per_iter (int): Number of samples to label per iteration
+        model_name (str): Model architecture ('resnet18', 'resnet50', 'densenet121')
+        objective_function_name (str): Loss function name (default: 'BCEWithLogitsLoss')
+        optimizer_name (str): Optimizer name (default: 'Adam')
+        lr (float): Learning rate (default: 0.001)
+        root_dir (str, optional): Dataset root directory
+        dataset (ChestXrayDataset, optional): Pre-loaded dataset instance
+        batch_size (int): Training batch size (default: 32)
+        test_sample_size (int, optional): Test set size (None = use all)
+        seed (int): Random seed for reproducibility (default: 42)
+        max_train_size (int): Maximum labeled set size (default: 60000)
+        initial_train_ratio (float): Initial labeled set fraction (default: 0.1)
+        resume_iter (int, optional): Iteration to resume from (None = start fresh)
+
+    Attributes:
+        train_indices (set): Current labeled set (image filenames)
+        pool_indices (set): Current unlabeled pool (image filenames)
+        test_indices (list): Test set (image filenames)
+        model: Classifier model instance
+        accuracy_scores (list): Accuracy per iteration
+        recall_scores (list): Recall per iteration
+
+    Note:
+        Subclasses must implement _sampling() method to define the acquisition strategy.
+    """
+    def __init__(self,
                  device,
                  iterations,
                  epochs_per_iter,
@@ -26,7 +110,8 @@ class ActiveLearningPipeline:
                  batch_size=32,
                  test_sample_size=None,
                  seed=42,
-                 max_train_size=60000, 
+                 max_train_size=60000,
+                 initial_train_ratio: float = 0.1,
                  resume_iter: int = None): #NOTE: update default values later as needed
 
         if dataset is None and root_dir is None:
@@ -46,9 +131,9 @@ class ActiveLearningPipeline:
         self.pool_loader = self.dataset.get_dataloader(from_split='train', batch_size=self.batch_size, shuffle=False)
         if not resume_iter:
             self.pool_indices = set(self.dataset.train_indices)
-            # Initialize train_indices with a random 10% of the pool as the initial labeled set
+            # Initialize train_indices with a random initial_train_ratio of the pool as the initial labeled set
             total_pool = list(self.pool_indices)
-            initial_train_size = max(1, int(0.1 * len(total_pool))) # TODO- alexa: maybe 0.08 so it will be smaller
+            initial_train_size = max(1, int(initial_train_ratio * len(total_pool)))
             print(f"Starting fresh, initializing train set with {initial_train_size} samples")
             self.train_indices = set(random.sample(total_pool, initial_train_size))
             self._update_pool_indices(self.train_indices)
@@ -104,6 +189,31 @@ class ActiveLearningPipeline:
         return None, None
       
     def run_pipeline(self):
+        """
+        Execute the complete active learning pipeline.
+
+        Runs the full active learning loop for the specified number of iterations:
+        - Train model on current labeled set
+        - Evaluate on test set
+        - Sample most informative/diverse points from pool
+        - Add sampled points to labeled set
+        - Save checkpoint for resumption
+
+        Returns:
+            tuple: (accuracy_scores, recall_scores)
+                - accuracy_scores (list): Accuracy percentage per iteration
+                - recall_scores (list): Recall percentage per iteration
+
+        Side Effects:
+            - Modifies self.train_indices and self.pool_indices
+            - Saves checkpoints to checkpoints/ directory
+            - Prints progress information
+            - Updates self.accuracy_scores and self.recall_scores
+
+        Note:
+            - Automatically stops if pool has fewer samples than budget
+            - Raises ValueError if train set exceeds max_train_size
+        """
         self.accuracy_scores = []
         self.recall_scores = []
         print(f"Running active learning pipeline whith {self.model_name} model")
@@ -179,7 +289,33 @@ class ActiveLearningPipeline:
 
 
 class RandomSamplingActiveLearning(ActiveLearningPipeline):
+    """
+    Random sampling baseline for active learning.
+
+    Selects samples uniformly at random from the unlabeled pool.
+    This provides a baseline to measure the effectiveness of more
+    sophisticated active learning strategies.
+
+    Inherits all parameters and functionality from ActiveLearningPipeline.
+
+    Example:
+        >>> pipeline = RandomSamplingActiveLearning(
+        ...     device=torch.device('cuda'),
+        ...     iterations=10,
+        ...     epochs_per_iter=5,
+        ...     budget_per_iter=1000,
+        ...     model_name='resnet18',
+        ...     seed=42
+        ... )
+        >>> accuracy_scores, recall_scores = pipeline.run_pipeline()
+    """
     def _sampling(self, **kwargs):
+        """
+        Select samples uniformly at random from the pool.
+
+        Returns:
+            set: Set of randomly selected image filenames
+        """
         random.seed(self.seed)
         # Convert set to list for random.sample, then convert back to set
         pool_list = list(self.pool_indices)
@@ -187,6 +323,38 @@ class RandomSamplingActiveLearning(ActiveLearningPipeline):
 
 
 class BADGESamplingActiveLearning(ActiveLearningPipeline):
+    """
+    BADGE (Batch Active learning by Diverse Gradient Embeddings) sampler.
+
+    Selects samples based on gradient embeddings that combine uncertainty
+    and diversity. Computes hypothetical gradients and uses k-means++ to
+    select a diverse batch of informative samples.
+
+    Key Features:
+        - Uncertainty: Selects samples with high gradient magnitude
+        - Diversity: Uses k-means++ to avoid redundant samples
+        - Efficiency: Optional subsampling for large pools
+        - Memory: FP16 support for large-scale problems
+
+    Args:
+        badge_subsample (int, optional): Subsample pool to this size for efficiency
+        badge_fp16 (bool): Use FP16 for gradient embeddings (default: False)
+        **kwargs: All arguments from ActiveLearningPipeline
+
+    Reference:
+        Ash et al., "Deep Batch Active Learning by Diverse, Uncertain Gradient
+        Lower Bounds", ICLR 2020
+
+    Example:
+        >>> pipeline = BADGESamplingActiveLearning(
+        ...     device=torch.device('cuda'),
+        ...     iterations=10,
+        ...     budget_per_iter=1000,
+        ...     model_name='resnet18',
+        ...     badge_subsample=20000,
+        ...     badge_fp16=False
+        ... )
+    """
     def __init__(self, *args, badge_subsample: Optional[int] = None, badge_fp16: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.badge_subsample = badge_subsample
@@ -375,9 +543,42 @@ class BADGESamplingActiveLearning(ActiveLearningPipeline):
         return centers
 
 class CoreSetSamplingActiveLearning(ActiveLearningPipeline):
+    """
+    CoreSet (k-center greedy) diversity-based active learning sampler.
+
+    Selects samples to maximize diversity by choosing points that are farthest
+    from the current labeled set in feature embedding space. Uses greedy k-center
+    algorithm to ensure good coverage of the feature space.
+
+    Key Features:
+        - Diversity: Selects samples far from labeled set
+        - Greedy k-center: Iteratively picks farthest points
+        - Feature-based: Uses penultimate layer embeddings
+        - Efficiency: Optional subsampling and L2 normalization
+
+    Args:
+        coreset_subsample (int, optional): Subsample pool to this size for efficiency
+        l2_norm (bool): L2-normalize features for stable distances (default: True)
+        dist_chunk (int): Chunk size for distance computation (default: 2048)
+        **kwargs: All arguments from ActiveLearningPipeline
+
+    Reference:
+        Sener & Savarese, "Active Learning for Convolutional Neural Networks:
+        A Core-Set Approach", ICLR 2018
+
+    Example:
+        >>> pipeline = CoreSetSamplingActiveLearning(
+        ...     device=torch.device('cuda'),
+        ...     iterations=10,
+        ...     budget_per_iter=1000,
+        ...     model_name='resnet18',
+        ...     coreset_subsample=20000,
+        ...     l2_norm=True
+        ... )
+    """
     def __init__(self, *args, coreset_subsample: Optional[int] = None, l2_norm: bool = True, dist_chunk: int = 2048, **kwargs):
         super().__init__(*args, **kwargs)
-        self.coreset_subsample = coreset_subsample  
+        self.coreset_subsample = coreset_subsample
         self.l2_norm = l2_norm
         self.dist_chunk = dist_chunk
         
@@ -509,6 +710,46 @@ import torch
 
 class HybridBADGECoreSetActiveLearning(BADGESamplingActiveLearning,
                                        CoreSetSamplingActiveLearning):
+    """
+    Hybrid sampler combining BADGE (uncertainty) and CoreSet (diversity).
+
+    Splits the labeling budget between BADGE and CoreSet methods to balance
+    uncertainty-based and diversity-based sampling. This often outperforms
+    either strategy alone by selecting both informative and diverse samples.
+
+    The hybrid strategy:
+    1. Allocates budget_per_iter * badge_ratio to BADGE
+    2. Allocates remaining budget to CoreSet
+    3. Takes union of both selections
+    4. Handles overlaps and shortfalls automatically
+
+    Key Features:
+        - Balance: Combines uncertainty + diversity
+        - Configurable ratio: Control BADGE vs CoreSet split
+        - Overlap handling: Deduplicates selections automatically
+        - Top-up: Uses CoreSet to fill budget if union < budget
+
+    Args:
+        badge_ratio (float): Fraction of budget for BADGE (0.0-1.0, default: 0.5)
+        badge_subsample (int, optional): Subsample pool for BADGE efficiency
+        badge_fp16 (bool): Use FP16 for BADGE (default: False)
+        coreset_subsample (int, optional): Subsample pool for CoreSet efficiency
+        l2_norm (bool): L2-normalize CoreSet features (default: True)
+        dist_chunk (int): CoreSet distance chunk size (default: 2048)
+        **kwargs: All arguments from ActiveLearningPipeline
+
+    Example:
+        >>> pipeline = HybridBADGECoreSetActiveLearning(
+        ...     device=torch.device('cuda'),
+        ...     iterations=10,
+        ...     budget_per_iter=1000,
+        ...     model_name='resnet18',
+        ...     badge_ratio=0.5,           # 50% BADGE, 50% CoreSet
+        ...     badge_subsample=20000,
+        ...     coreset_subsample=20000
+        ... )
+        >>> accuracy_scores, recall_scores = pipeline.run_pipeline()
+    """
     def __init__(self,
                  *args,
                  badge_ratio: float = 0.5,                 # fraction of budget to BADGE (0..1)

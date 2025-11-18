@@ -1,0 +1,35 @@
+{
+  "CONFIG_NAME": "default",
+  "DATASET_PATH": "nih_chest_xrays_light",
+  "BATCH_SIZE": 32,
+  "EPOCHS_PER_ITER": 2,
+  "MODEL_NAME": "resnet18",
+  "OPTIMIZER_NAME": "Adam",
+  "LOSS_FUNCTION": "BCEWithLogitsLoss",
+  "LEARNING_RATE": 0.001,
+  "ITERATIONS": 10,
+  "BUDGET_PER_ITER": 1000,
+  "TEST_SAMPLE_SIZE": 1000,
+  "MAX_TRAIN_SIZE": 60000,
+  "INITIAL_TRAIN_RATIO": 0.1,
+  "SEEDS": [42, 7, 1],
+  "SAMPLERS_CONFIG": {
+    "random": {
+      "params": {}
+    },
+    "hybrid": {
+      "params": {
+        "badge_ratio": 0.5,
+        "badge_subsample": 20000,
+        "badge_fp16": false,
+        "coreset_subsample": 20000,
+        "l2_norm": true,
+        "dist_chunk": 2048
+      }
+    }
+  },
+  "RESULTS_DIR": "results",
+  "CHECKPOINT_DIR": "checkpoints_main",
+  "PLOTS_DIR": "plots",
+  "CONFIGS_DIR": "configurations"
+}

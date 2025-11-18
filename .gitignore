@@ -8,8 +8,8 @@ lab2fp/
 .DS_Store
 ARXIV_V5_CHESTXRAY.pdfֿ
 __pycache__/
-setup_venv.sh
 setup_venv.bat
 setup.py
 activate_venv.sh
 activescanlab.egg-info/
+checkpoints_main/
