@@ -777,7 +777,7 @@ Examples:
     parser.add_argument(
         "--config",
         type=str,
-        default="default",
+        default="run1",
         help="Configuration name to use (loads from configurations/<name>.json). Use 'default' for built-in defaults."
     )
 
